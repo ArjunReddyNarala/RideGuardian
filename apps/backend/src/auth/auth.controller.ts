@@ -1,50 +1,43 @@
 import {
   Body,
   Controller,
-  Headers,
   Post,
-  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
-import { AuthService } from './auth.service.js';
 import { UsersService } from '../users/users.service.js';
+import { FirebaseAuthGuard } from './guards/firebase-auth.guard.js';
+import { CurrentUser } from './decorators/current-user.decorator.js';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 
 @Controller('api/v1/auth')
 export class AuthController {
   constructor(
-    private readonly authService: AuthService,
     private readonly usersService: UsersService,
   ) {}
 
   @Post('sync')
+  @UseGuards(FirebaseAuthGuard)
   async syncUser(
-    @Headers('authorization') authorization: string,
+    @CurrentUser() firebaseUser: DecodedIdToken,
     @Body()
     body: {
-      name?: string;
       phone?: string;
       profileImageUrl?: string;
     },
   ) {
-    if (!authorization?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing Firebase ID token');
+    const existingUser =
+      await this.usersService.getUserByFirebaseUid(firebaseUser.uid);
+
+    if (existingUser) {
+      return existingUser;
     }
 
-    const idToken = authorization.substring('Bearer '.length);
-
-    let decodedToken;
-
-    try {
-      decodedToken = await this.authService.verifyIdToken(idToken);
-    } catch {
-      throw new UnauthorizedException('Invalid Firebase ID token');
-    }
-
-    const firebaseUid = decodedToken.uid;
-
-    // We'll add getUserByFirebaseUid next.
-    return {
-      firebaseUid,
-      message: 'Firebase token verified successfully',
-    };
+    return this.usersService.createUser({
+      firebaseUid: firebaseUser.uid,
+      name: firebaseUser.name ?? 'RideGuardian User',
+      email: firebaseUser.email,
+      phone: body.phone ?? firebaseUser.phone_number,
+      profileImageUrl: body.profileImageUrl ?? firebaseUser.picture,
+    });
   }
 }

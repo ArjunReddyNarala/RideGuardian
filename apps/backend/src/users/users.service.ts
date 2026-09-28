@@ -52,4 +52,16 @@ export class UsersService {
 
     return this.userRepository.save(user);
   }
+
+  async getUserByFirebaseUid(firebaseUid: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { firebaseUid },
+    });
+  }
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { email },
+    });
+  }
 }

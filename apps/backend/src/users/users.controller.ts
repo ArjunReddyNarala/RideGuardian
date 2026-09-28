@@ -2,39 +2,29 @@ import {
   Body,
   Controller,
   Get,
-  Param,
   Patch,
-  Post,
+  UseGuards,
 } from '@nestjs/common';
-
 import { UsersService } from './users.service.js';
+import { FirebaseAuthGuard } from '../auth/guards/firebase-auth.guard.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 
 @Controller('api/v1/users')
+@UseGuards(FirebaseAuthGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Post()
-  async createUser(
-    @Body()
-    body: {
-      firebaseUid: string;
-      name: string;
-      email?: string;
-      phone?: string;
-      profileImageUrl?: string;
-    },
+  @Get('me')
+  async getCurrentUser(
+    @CurrentUser() firebaseUser: DecodedIdToken,
   ) {
-    return this.usersService.createUser(body);
+    return this.usersService.getUserByFirebaseUid(firebaseUser.uid);
   }
 
-  @Get(':id')
-  async getUser(@Param('id') id: string) {
-    return this.usersService.getUserById(id);
-  }
-
-  @Patch(':id')
-  async updateUser(
-    @Param('id') id: string,
+  @Patch('me')
+  async updateCurrentUser(
+    @CurrentUser() firebaseUser: DecodedIdToken,
     @Body()
     body: {
       name?: string;
@@ -42,6 +32,14 @@ export class UsersController {
       profileImageUrl?: string;
     },
   ) {
-    return this.usersService.updateUser(id, body);
+    const user = await this.usersService.getUserByFirebaseUid(
+      firebaseUser.uid,
+    );
+
+    if (!user) {
+      return null;
+    }
+
+    return this.usersService.updateUser(user.id, body);
   }
 }
