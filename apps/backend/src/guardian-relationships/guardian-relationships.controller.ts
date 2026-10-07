@@ -36,7 +36,7 @@ export class GuardianRelationshipsController {
 
     return this.guardianRelationshipsService.createRelationship(
       guardian.id,
-      dto.riderId,
+      dto.riderEmail,
     );
   }
 

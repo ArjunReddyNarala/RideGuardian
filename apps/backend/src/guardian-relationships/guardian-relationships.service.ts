@@ -21,45 +21,39 @@ export class GuardianRelationshipsService {
 
   async createRelationship(
     guardianId: string,
-    riderId: string,
+    riderEmail: string,
   ): Promise<GuardianRiderRelationship> {
-    if (guardianId === riderId) {
-      throw new BadRequestException(
-        'A user cannot be their own rider',
-      );
-    }
-
-    const rider = await this.usersService.getUserById(riderId);
+    const rider = await this.usersService.getUserByEmail(riderEmail);
 
     if (!rider) {
       throw new NotFoundException('Rider not found');
     }
 
+    if (guardianId === rider.id) {
+      throw new BadRequestException('A user cannot be their own rider');
+    }
+
     const existing = await this.relationshipRepository.findOne({
       where: {
         guardianId,
-        riderId,
+        riderId: rider.id,
       },
     });
 
     if (existing) {
-      throw new ConflictException(
-        'Guardian-rider relationship already exists',
-      );
+      throw new ConflictException('Guardian-rider relationship already exists');
     }
 
     const relationship = this.relationshipRepository.create({
       guardianId,
-      riderId,
+      riderId: rider.id,
       status: 'PENDING',
     });
 
     return this.relationshipRepository.save(relationship);
   }
 
-  async getRelationships(
-    userId: string,
-  ): Promise<GuardianRiderRelationship[]> {
+  async getRelationships(userId: string): Promise<GuardianRiderRelationship[]> {
     return this.relationshipRepository
       .createQueryBuilder('relationship')
       .where('relationship.guardian_id = :userId', { userId })
@@ -72,8 +66,7 @@ export class GuardianRelationshipsService {
     relationshipId: string,
     riderId: string,
   ): Promise<GuardianRiderRelationship> {
-    const relationship =
-      await this.getRelationshipOrThrow(relationshipId);
+    const relationship = await this.getRelationshipOrThrow(relationshipId);
 
     if (relationship.riderId !== riderId) {
       throw new ForbiddenException(
@@ -97,8 +90,7 @@ export class GuardianRelationshipsService {
     relationshipId: string,
     riderId: string,
   ): Promise<GuardianRiderRelationship> {
-    const relationship =
-      await this.getRelationshipOrThrow(relationshipId);
+    const relationship = await this.getRelationshipOrThrow(relationshipId);
 
     if (relationship.riderId !== riderId) {
       throw new ForbiddenException(
@@ -121,13 +113,9 @@ export class GuardianRelationshipsService {
     relationshipId: string,
     userId: string,
   ): Promise<GuardianRiderRelationship> {
-    const relationship =
-      await this.getRelationshipOrThrow(relationshipId);
+    const relationship = await this.getRelationshipOrThrow(relationshipId);
 
-    if (
-      relationship.guardianId !== userId &&
-      relationship.riderId !== userId
-    ) {
+    if (relationship.guardianId !== userId && relationship.riderId !== userId) {
       throw new ForbiddenException(
         'You are not part of this guardian-rider relationship',
       );
@@ -148,17 +136,14 @@ export class GuardianRelationshipsService {
   private async getRelationshipOrThrow(
     relationshipId: string,
   ): Promise<GuardianRiderRelationship> {
-    const relationship =
-      await this.relationshipRepository.findOne({
-        where: {
-          id: relationshipId,
-        },
-      });
+    const relationship = await this.relationshipRepository.findOne({
+      where: {
+        id: relationshipId,
+      },
+    });
 
     if (!relationship) {
-      throw new NotFoundException(
-        'Guardian-rider relationship not found',
-      );
+      throw new NotFoundException('Guardian-rider relationship not found');
     }
 
     return relationship;

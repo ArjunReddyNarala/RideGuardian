@@ -1,6 +1,6 @@
-import { IsUUID } from 'class-validator';
+import { IsEmail } from 'class-validator';
 
 export class CreateGuardianRelationshipDto {
-  @IsUUID()
-  riderId: string;
+  @IsEmail()
+  riderEmail: string;
 }
