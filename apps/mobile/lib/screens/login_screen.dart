@@ -25,6 +25,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final backendUser =
           await AuthService.instance.syncWithBackend();
+      
+      print('Backend user: $backendUser');
 
       if (!mounted) {
         return;

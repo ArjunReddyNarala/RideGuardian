@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+
 import { GuardianRiderRelationship } from './entities/guardian-rider-relationship.entity.js';
 import { UsersService } from '../users/users.service.js';
 
@@ -19,103 +20,94 @@ export class GuardianRelationshipsService {
     private readonly usersService: UsersService,
   ) {}
 
+  /**
+   * Creates a guardian-rider relationship after an invitation
+   * has been accepted.
+   *
+   * This method is intended to be called internally by
+   * InvitationsService.acceptInvitation().
+   */
   async createRelationship(
     guardianId: string,
-    riderEmail: string,
+    riderId: string,
   ): Promise<GuardianRiderRelationship> {
-    const rider = await this.usersService.getUserByEmail(riderEmail);
+    if (guardianId === riderId) {
+      throw new BadRequestException(
+        'A user cannot be their own rider',
+      );
+    }
+
+    const rider = await this.usersService.getUserById(riderId);
 
     if (!rider) {
       throw new NotFoundException('Rider not found');
     }
 
-    if (guardianId === rider.id) {
-      throw new BadRequestException('A user cannot be their own rider');
-    }
-
-    const existing = await this.relationshipRepository.findOne({
-      where: {
-        guardianId,
-        riderId: rider.id,
-      },
-    });
+    const existing =
+      await this.relationshipRepository.findOne({
+        where: {
+          guardianId,
+          riderId,
+        },
+      });
 
     if (existing) {
-      throw new ConflictException('Guardian-rider relationship already exists');
+      throw new ConflictException(
+        'Guardian-rider relationship already exists',
+      );
     }
 
-    const relationship = this.relationshipRepository.create({
-      guardianId,
-      riderId: rider.id,
-      status: 'PENDING',
-    });
+    const relationship =
+      this.relationshipRepository.create({
+        guardianId,
+        riderId,
+        status: 'ACCEPTED',
+        acceptedAt: new Date(),
+      });
 
     return this.relationshipRepository.save(relationship);
   }
 
-  async getRelationships(userId: string): Promise<GuardianRiderRelationship[]> {
+  /**
+   * Returns all guardian-rider relationships where
+   * the current user is either the guardian or the rider.
+   */
+  async getRelationships(
+    userId: string,
+  ): Promise<GuardianRiderRelationship[]> {
     return this.relationshipRepository
       .createQueryBuilder('relationship')
-      .where('relationship.guardian_id = :userId', { userId })
-      .orWhere('relationship.rider_id = :userId', { userId })
-      .orderBy('relationship.created_at', 'DESC')
+      .where(
+        'relationship.guardian_id = :userId',
+        { userId },
+      )
+      .orWhere(
+        'relationship.rider_id = :userId',
+        { userId },
+      )
+      .orderBy(
+        'relationship.created_at',
+        'DESC',
+      )
       .getMany();
   }
 
-  async acceptRelationship(
-    relationshipId: string,
-    riderId: string,
-  ): Promise<GuardianRiderRelationship> {
-    const relationship = await this.getRelationshipOrThrow(relationshipId);
-
-    if (relationship.riderId !== riderId) {
-      throw new ForbiddenException(
-        'Only the rider can accept this relationship',
-      );
-    }
-
-    if (relationship.status !== 'PENDING') {
-      throw new BadRequestException(
-        `Cannot accept a relationship with status ${relationship.status}`,
-      );
-    }
-
-    relationship.status = 'ACCEPTED';
-    relationship.acceptedAt = new Date();
-
-    return this.relationshipRepository.save(relationship);
-  }
-
-  async declineRelationship(
-    relationshipId: string,
-    riderId: string,
-  ): Promise<GuardianRiderRelationship> {
-    const relationship = await this.getRelationshipOrThrow(relationshipId);
-
-    if (relationship.riderId !== riderId) {
-      throw new ForbiddenException(
-        'Only the rider can decline this relationship',
-      );
-    }
-
-    if (relationship.status !== 'PENDING') {
-      throw new BadRequestException(
-        `Cannot decline a relationship with status ${relationship.status}`,
-      );
-    }
-
-    relationship.status = 'DECLINED';
-
-    return this.relationshipRepository.save(relationship);
-  }
-
+  /**
+   * Revokes an existing accepted guardian-rider relationship.
+   *
+   * Either the guardian or the rider can revoke the relationship.
+   */
   async revokeRelationship(
     relationshipId: string,
     userId: string,
   ): Promise<GuardianRiderRelationship> {
-    const relationship = await this.getRelationshipOrThrow(relationshipId);
+    const relationship =
+      await this.getRelationshipOrThrow(relationshipId);
 
-    if (relationship.guardianId !== userId && relationship.riderId !== userId) {
+    if (
+      relationship.guardianId !== userId &&
+      relationship.riderId !== userId
+    ) {
       throw new ForbiddenException(
         'You are not part of this guardian-rider relationship',
       );
@@ -130,20 +122,25 @@ export class GuardianRelationshipsService {
     relationship.status = 'REVOKED';
     relationship.revokedAt = new Date();
 
-    return this.relationshipRepository.save(relationship);
+    return this.relationshipRepository.save(
+      relationship,
+    );
   }
 
   private async getRelationshipOrThrow(
     relationshipId: string,
   ): Promise<GuardianRiderRelationship> {
-    const relationship = await this.relationshipRepository.findOne({
-      where: {
-        id: relationshipId,
-      },
-    });
+    const relationship =
+      await this.relationshipRepository.findOne({
+        where: {
+          id: relationshipId,
+        },
+      });
 
     if (!relationship) {
-      throw new NotFoundException('Guardian-rider relationship not found');
+      throw new NotFoundException(
+        'Guardian-rider relationship not found',
+      );
     }
 
     return relationship;

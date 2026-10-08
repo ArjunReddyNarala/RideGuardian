@@ -57,6 +57,8 @@ class AuthService {
 
     final idToken = await user.getIdToken();
 
+    print('Firebase ID Token: $idToken');
+
     if (idToken == null) {
       throw FirebaseAuthException(
         code: 'token-unavailable',
