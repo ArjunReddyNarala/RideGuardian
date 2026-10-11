@@ -1,4 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/user_api.dart';
 
@@ -11,6 +13,7 @@ class LoginSuccessScreen extends StatefulWidget {
 
 class _LoginSuccessScreenState extends State<LoginSuccessScreen> {
   bool _isLoading = false;
+  bool _isCopyingToken = false;
   String? _result;
 
   Future<void> _testProfileApi() async {
@@ -50,6 +53,53 @@ Firebase UID: ${user['firebaseUid']}
     }
   }
 
+  Future<void> _copyFirebaseToken() async {
+    setState(() {
+      _isCopyingToken = true;
+      _result = null;
+    });
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user == null) {
+        throw Exception('No Firebase user is currently logged in.');
+      }
+
+      // Force refresh to make sure Swagger gets a fresh Firebase ID token.
+      final token = await user.getIdToken(true);
+
+      if (token == null || token.isEmpty) {
+        throw Exception('Failed to retrieve Firebase ID token.');
+      }
+
+      await Clipboard.setData(
+        ClipboardData(text: token),
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _result =
+            'Fresh Firebase ID token copied to clipboard!\n\n'
+            'Paste it directly into Swagger → Authorize.\n\n'
+            'Do NOT add "Bearer ".';
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _result = 'Failed to get Firebase token:\n$e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCopyingToken = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -60,13 +110,20 @@ Firebase UID: ${user['firebaseUid']}
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.check_circle, color: Colors.green, size: 90),
+                const Icon(
+                  Icons.check_circle,
+                  color: Colors.green,
+                  size: 90,
+                ),
 
                 const SizedBox(height: 24),
 
                 const Text(
                   'Login Successful',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
 
                 const SizedBox(height: 12),
@@ -79,7 +136,8 @@ Firebase UID: ${user['firebaseUid']}
                 const SizedBox(height: 40),
 
                 ElevatedButton(
-                  onPressed: _isLoading ? null : _testProfileApi,
+                  onPressed:
+                      _isLoading ? null : _testProfileApi,
                   child: _isLoading
                       ? const SizedBox(
                           height: 20,
@@ -89,9 +147,33 @@ Firebase UID: ${user['firebaseUid']}
                       : const Text('Test My Profile API'),
                 ),
 
+                const SizedBox(height: 16),
+
+                ElevatedButton.icon(
+                  onPressed:
+                      _isCopyingToken ? null : _copyFirebaseToken,
+                  icon: _isCopyingToken
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.key),
+                  label: Text(
+                    _isCopyingToken
+                        ? 'Getting Token...'
+                        : 'Copy Firebase Token',
+                  ),
+                ),
+
                 if (_result != null) ...[
                   const SizedBox(height: 24),
-                  Text(_result!, textAlign: TextAlign.center),
+                  Text(
+                    _result!,
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               ],
             ),

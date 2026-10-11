@@ -64,4 +64,16 @@ export class UsersService {
       where: { email },
     });
   }
+
+  async deactivateUser(id: string): Promise<User | null> {
+    const user = await this.getUserById(id);
+
+    if (!user) {
+      return null;
+    }
+
+    user.isActive = false;
+
+    return this.userRepository.save(user);
+  }
 }

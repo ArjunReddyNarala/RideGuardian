@@ -15,6 +15,8 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { DevicesModule } from './devices/devices.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { RiderSafetySettingsModule } from './rider-safety-settings/rider-safety-settings.module.js';
+import { GuardiansModule } from './guardians/guardians.module.js';
+import { RidersModule } from './riders/riders.module.js';
 
 @Module({
   imports: [
@@ -43,6 +45,8 @@ import { RiderSafetySettingsModule } from './rider-safety-settings/rider-safety-
     NotificationsModule,
     DevicesModule,
     AuthModule,
+    GuardiansModule,
+    RidersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

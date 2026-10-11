@@ -1,23 +1,30 @@
 import {
   Body,
   Controller,
+  Delete,
+  Get,
+  NotFoundException,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { UsersService } from '../users/users.service.js';
-import { FirebaseAuthGuard } from './guards/firebase-auth.guard.js';
-import { CurrentUser } from './decorators/current-user.decorator.js';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 
+import { CurrentUser } from './decorators/current-user.decorator.js';
+import { FirebaseAuthGuard } from './guards/firebase-auth.guard.js';
+
+import { UsersService } from '../users/users.service.js';
+
+@ApiTags('Authentication')
+@ApiBearerAuth()
 @Controller('api/v1/auth')
 export class AuthController {
-  constructor(
-    private readonly usersService: UsersService,
-  ) {}
+  constructor(private readonly usersService: UsersService) {}
 
-  @Post('sync')
+  @Post('register')
   @UseGuards(FirebaseAuthGuard)
-  async syncUser(
+  async register(
     @CurrentUser() firebaseUser: DecodedIdToken,
     @Body()
     body: {
@@ -25,8 +32,9 @@ export class AuthController {
       profileImageUrl?: string;
     },
   ) {
-    const existingUser =
-      await this.usersService.getUserByFirebaseUid(firebaseUser.uid);
+    const existingUser = await this.usersService.getUserByFirebaseUid(
+      firebaseUser.uid,
+    );
 
     if (existingUser) {
       return existingUser;
@@ -39,5 +47,67 @@ export class AuthController {
       phone: body.phone ?? firebaseUser.phone_number,
       profileImageUrl: body.profileImageUrl ?? firebaseUser.picture,
     });
+  }
+
+  @Get('me')
+  @UseGuards(FirebaseAuthGuard)
+  async getCurrentUser(@CurrentUser() firebaseUser: DecodedIdToken) {
+    const user = await this.usersService.getUserByFirebaseUid(firebaseUser.uid);
+
+    if (!user) {
+      throw new NotFoundException(
+        'User profile not found. Please register first.',
+      );
+    }
+
+    return user;
+  }
+
+  @Patch('me')
+  @UseGuards(FirebaseAuthGuard)
+  async updateCurrentUser(
+    @CurrentUser() firebaseUser: DecodedIdToken,
+    @Body()
+    body: {
+      name?: string;
+      phone?: string;
+      profileImageUrl?: string;
+    },
+  ) {
+    const user = await this.usersService.getUserByFirebaseUid(firebaseUser.uid);
+
+    if (!user) {
+      throw new NotFoundException(
+        'User profile not found. Please register first.',
+      );
+    }
+
+    const updatedUser = await this.usersService.updateUser(user.id, body);
+
+    if (!updatedUser) {
+      throw new NotFoundException('User profile not found.');
+    }
+
+    return updatedUser;
+  }
+
+  @Delete('me')
+  @UseGuards(FirebaseAuthGuard)
+  async deleteCurrentUser(@CurrentUser() firebaseUser: DecodedIdToken) {
+    const user = await this.usersService.getUserByFirebaseUid(firebaseUser.uid);
+
+    if (!user) {
+      throw new NotFoundException('User profile not found.');
+    }
+
+    const deactivatedUser = await this.usersService.deactivateUser(user.id);
+
+    if (!deactivatedUser) {
+      throw new NotFoundException('User profile not found.');
+    }
+
+    return {
+      message: 'Account deactivated successfully.',
+    };
   }
 }
