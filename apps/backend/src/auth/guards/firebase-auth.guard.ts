@@ -28,7 +28,8 @@ export class FirebaseAuthGuard implements CanActivate {
       request.user = decodedToken;
 
       return true;
-    } catch {
+    } catch (error) {
+      console.error('Firebase token verification failed:', error);
       throw new UnauthorizedException('Invalid Firebase ID token');
     }
   }

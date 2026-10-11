@@ -9,23 +9,24 @@ export class AuthService {
   private readonly firebaseAuth: Auth;
 
   constructor(private readonly configService: ConfigService) {
-    const apps = getApps();
+    const serviceAccountPath = this.configService.getOrThrow<string>(
+      'GOOGLE_APPLICATION_CREDENTIALS',
+    );
 
-    const firebaseApp =
-      apps.length > 0
-        ? apps[0]
-        : initializeApp({
-            credential: cert(
-              JSON.parse(
-                fs.readFileSync(
-                  this.configService.get<string>(
-                    'GOOGLE_APPLICATION_CREDENTIALS',
-                  )!,
-                  'utf-8',
-                ),
-              ),
-            ),
-          });
+    const serviceAccount = JSON.parse(
+      fs.readFileSync(serviceAccountPath, 'utf-8'),
+    );
+
+    console.log('Firebase Admin project:', serviceAccount.project_id);
+    console.log('Firebase Admin client:', serviceAccount.client_email);
+
+    const firebaseApp = initializeApp(
+      {
+        credential: cert(serviceAccount),
+        projectId: serviceAccount.project_id,
+      },
+      'rideguardian',
+    );
 
     this.firebaseAuth = getAuth(firebaseApp);
   }

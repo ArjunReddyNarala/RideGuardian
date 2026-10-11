@@ -5,7 +5,6 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { UsersModule } from './users/users.module.js';
 import { GuardianRelationshipsModule } from './guardian-relationships/guardian-relationships.module.js';
-import { RiderSafetySettingsModule } from './safety-settings/safety-settings.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
 import { RidesModule } from './rides/rides.module.js';
 import { RideGuardiansModule } from './ride-guardians/ride-guardians.module.js';
@@ -15,6 +14,7 @@ import { SafetyAlertsModule } from './safety-alerts/safety-alerts.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { DevicesModule } from './devices/devices.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { RiderSafetySettingsModule } from './rider-safety-settings/rider-safety-settings.module.js';
 
 @Module({
   imports: [

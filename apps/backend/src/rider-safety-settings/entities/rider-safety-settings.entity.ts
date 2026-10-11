@@ -12,14 +12,20 @@ import {
 @Index(['guardianId', 'riderId'], { unique: true })
 @Check(`"max_speed_kmh" IS NULL OR "max_speed_kmh" > 0`)
 @Check(`"speed_alert_cooldown_seconds" >= 0`)
-export class RiderSafetySetting {
+export class RiderSafetySettings {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'guardian_id', type: 'uuid' })
+  @Column({
+    name: 'guardian_id',
+    type: 'uuid',
+  })
   guardianId: string;
 
-  @Column({ name: 'rider_id', type: 'uuid' })
+  @Column({
+    name: 'rider_id',
+    type: 'uuid',
+  })
   riderId: string;
 
   @Column({
@@ -31,7 +37,10 @@ export class RiderSafetySetting {
   })
   maxSpeedKmh: number | null;
 
-  @Column({ name: 'speed_alert_enabled', default: true })
+  @Column({
+    name: 'speed_alert_enabled',
+    default: true,
+  })
   speedAlertEnabled: boolean;
 
   @Column({
@@ -41,9 +50,15 @@ export class RiderSafetySetting {
   })
   speedAlertCooldownSeconds: number;
 
-  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  @CreateDateColumn({
+    name: 'created_at',
+    type: 'timestamptz',
+  })
   createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  @UpdateDateColumn({
+    name: 'updated_at',
+    type: 'timestamptz',
+  })
   updatedAt: Date;
 }

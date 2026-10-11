@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'login_success_screen.dart';
+import '../services/user_api.dart';
+
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -20,29 +23,17 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final credential =
-          await AuthService.instance.signInWithGoogle();
+      await AuthService.instance.signInWithGoogle();
 
-      final backendUser =
-          await AuthService.instance.syncWithBackend();
-      
-      print('Backend user: $backendUser');
+      await AuthService.instance.signInWithGoogle();
 
       if (!mounted) {
         return;
       }
 
-      final user = credential.user;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Welcome ${user?.displayName ?? 'to RideGuardian'}!',
-          ),
-        ),
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const LoginSuccessScreen()),
       );
-
-      debugPrint('Backend user: $backendUser');
     } catch (e) {
       if (!mounted) {
         return;
@@ -73,10 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const Text(
                 'RideGuardian',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 12),
@@ -115,9 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(
                   _errorMessage!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.red,
-                  ),
+                  style: const TextStyle(color: Colors.red),
                 ),
               ],
             ],

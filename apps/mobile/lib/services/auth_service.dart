@@ -1,6 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'api_service.dart';
 
 class AuthService {
   AuthService._();
@@ -38,14 +37,12 @@ class AuthService {
       );
     }
 
-    final credential = GoogleAuthProvider.credential(
-      idToken: idToken,
-    );
+    final credential = GoogleAuthProvider.credential(idToken: idToken);
 
     return _firebaseAuth.signInWithCredential(credential);
   }
 
-  Future<Map<String, dynamic>> syncWithBackend() async {
+  Future<String> getIdToken() async {
     final user = _firebaseAuth.currentUser;
 
     if (user == null) {
@@ -55,9 +52,7 @@ class AuthService {
       );
     }
 
-    final idToken = await user.getIdToken();
-
-    print('Firebase ID Token: $idToken');
+    final idToken = await user.getIdToken(true);
 
     if (idToken == null) {
       throw FirebaseAuthException(
@@ -66,9 +61,7 @@ class AuthService {
       );
     }
 
-    return ApiService.instance.syncUser(
-      firebaseIdToken: idToken,
-    );
+    return idToken;
   }
 
   Future<void> signOut() async {
@@ -78,6 +71,5 @@ class AuthService {
 
   User? get currentUser => _firebaseAuth.currentUser;
 
-  Stream<User?> get authStateChanges =>
-      _firebaseAuth.authStateChanges();
+  Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
 }
