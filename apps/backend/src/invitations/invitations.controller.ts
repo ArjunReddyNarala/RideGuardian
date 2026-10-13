@@ -17,7 +17,10 @@ import { UsersService } from '../users/users.service.js';
 
 import { CreateInvitationDto } from './dto/create-invitation.dto.js';
 import { InvitationsService } from './invitations.service.js';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Invitations')
+@ApiBearerAuth()
 @Controller('api/v1/invitations')
 @UseGuards(FirebaseAuthGuard)
 export class InvitationsController {

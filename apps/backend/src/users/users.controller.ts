@@ -9,7 +9,10 @@ import { UsersService } from './users.service.js';
 import { FirebaseAuthGuard } from '../auth/guards/firebase-auth.guard.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import type { DecodedIdToken } from 'firebase-admin/auth';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Users')
+@ApiBearerAuth()
 @Controller('api/v1/users')
 @UseGuards(FirebaseAuthGuard)
 export class UsersController {
