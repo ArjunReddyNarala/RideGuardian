@@ -1,27 +1,30 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'screens/login_screen.dart';
 
+import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
+import 'screens/welcome_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  runApp(const MainApp());
+  runApp(const RideGuardianApp());
 }
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+class RideGuardianApp extends StatelessWidget {
+  const RideGuardianApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
+      title: 'RideGuardian',
       debugShowCheckedModeBanner: false,
-      home: const LoginScreen(),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.light,
+      home: const WelcomeScreen(),
     );
   }
 }
