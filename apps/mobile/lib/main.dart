@@ -5,26 +5,28 @@ import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
 import 'screens/welcome_screen.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+Future main() async {
+WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+await Firebase.initializeApp(
+options: DefaultFirebaseOptions.currentPlatform,
+);
 
-  runApp(const RideGuardianApp());
+runApp(const RideGuardianApp());
 }
 
 class RideGuardianApp extends StatelessWidget {
-  const RideGuardianApp({super.key});
+const RideGuardianApp({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'RideGuardian',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.light,
-      home: const WelcomeScreen(),
-    );
-  }
+@override
+Widget build(BuildContext context) {
+return MaterialApp(
+title: 'RideGuardian',
+debugShowCheckedModeBanner: false,
+theme: AppTheme.light,
+darkTheme: AppTheme.dark,
+themeMode: ThemeMode.system,
+home: const WelcomeScreen(),
+);
+}
 }

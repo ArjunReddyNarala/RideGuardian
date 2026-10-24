@@ -82,7 +82,12 @@ class _PhoneSignInScreenState extends State<PhoneSignInScreen> {
         },
         onTimeout: () {},
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('Phone sign-in request failed.');
+      debugPrint('Error type: ${error.runtimeType}');
+      debugPrint('Error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
       if (!mounted) return;
 
       setState(() {

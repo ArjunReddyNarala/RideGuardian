@@ -19,13 +19,29 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.6
 
 flutter:
   uses-material-design: true
 
+  assets:
+    - lib/assets/icons/app_icon.png
+    - lib/assets/icons/google_sign_in/
 
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "lib/assets/icons/app_icon.png"
+  image_path: "lib/assets/icons/app_icon_dark.png"
   remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#101918"
+  image: "lib/assets/icons/splash_logo.png"
+
+  android: true
+  ios: true
+  web: false
+
+  android_12:
+    color: "#101918"
+    image: "lib/assets/icons/splash_logo.png"

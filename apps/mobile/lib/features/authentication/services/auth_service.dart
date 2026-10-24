@@ -60,6 +60,13 @@ class AuthService {
       timeout: const Duration(seconds: 60),
       verificationCompleted: onAutoVerified,
       verificationFailed: (FirebaseAuthException error) {
+        debugPrint('========== FIREBASE PHONE AUTH ERROR ==========');
+        debugPrint('Code: ${error.code}');
+        debugPrint('Message: ${error.message}');
+        debugPrint('Plugin: ${error.plugin}');
+        debugPrint('Details: ${error.toString()}');
+        debugPrint('================================================');
+
         onError(_phoneErrorMessage(error));
       },
       codeSent: (String verificationId, int? resendToken) {

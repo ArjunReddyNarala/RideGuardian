@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppColors {
-  // Brand
-  static const Color primary = Color(0xFF16A085);
-  static const Color primaryDark = Color(0xFF087F68);
-  static const Color primaryLight = Color(0xFFE3F7F1);
+  // Brand — WhatsApp green
+  static const Color primary = Color(0xFF25D366);
+  static const Color primaryDark = Color(0xFF128C7E);
+  static const Color primaryLight = Color(0xFFD9FBE5);
 
   // Light theme
   static const Color lightBackground = Color(0xFFF8FAFC);
