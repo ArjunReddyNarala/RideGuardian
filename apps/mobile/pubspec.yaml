@@ -11,6 +11,8 @@ dependencies:
   firebase_core: ^4.15.0
   flutter:
     sdk: flutter
+  geolocator: ^14.1.2
+  google_maps_flutter: ^2.19.0
   google_sign_in: ^7.2.0
   http: ^1.6.0
 

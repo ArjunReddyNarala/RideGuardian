@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 import '../features/authentication/screens/phone_sign_in_screen.dart';
 import '../features/authentication/services/auth_service.dart';
+import '../features/home/screens/home_screen.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -79,17 +80,17 @@ class WelcomeScreen extends StatelessWidget {
                         ),
                       ),
 
-                      const SizedBox(height: 64),
+                      const SizedBox(height: 52),
 
                       // Main welcome message.
                       Text(
                         'Your journey\nYour safety\nOur priority',
                         style: textTheme.headlineLarge?.copyWith(
-                          fontSize: 39,
+                          fontSize: 34,
                           fontWeight: FontWeight.w800,
                           fontStyle: FontStyle.italic,
-                          height: 1.2,
-                          letterSpacing: -1.2,
+                          height: 1.25,
+                          letterSpacing: -0.8,
                           color: colorScheme.onSurface,
                         ),
                         textAlign: TextAlign.center,
@@ -134,13 +135,13 @@ class WelcomeScreen extends StatelessWidget {
                             children: [
                               Image.asset(
                                 googleLogoAsset,
-                                width: 28,
-                                height: 28,
+                                width: 30,
+                                height: 30,
                                 fit: BoxFit.contain,
                                 errorBuilder: (context, error, stackTrace) {
                                   return Icon(
                                     Icons.g_mobiledata_rounded,
-                                    size: 28,
+                                    size: 30,
                                     color: colorScheme.onSurface,
                                   );
                                 },
@@ -261,12 +262,9 @@ class WelcomeScreen extends StatelessWidget {
 
       if (!context.mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Google authentication succeeded. '
-            'Backend profile integration is next.',
-          ),
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => const HomeScreen(),
         ),
       );
     } catch (error) {

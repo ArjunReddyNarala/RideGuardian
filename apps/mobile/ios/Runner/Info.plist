@@ -99,5 +99,10 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>RideGuardian uses your location to display your live position and support rider safety.</string>
+
+		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+		<string>RideGuardian uses your location to support ride safety when permitted.</string>
 	</dict>
 </plist>
