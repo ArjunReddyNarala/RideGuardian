@@ -11,6 +11,7 @@ dependencies:
   firebase_core: ^4.15.0
   flutter:
     sdk: flutter
+  flutter_dotenv: ^6.0.1
   geolocator: ^14.1.2
   google_maps_flutter: ^2.19.0
   google_sign_in: ^7.2.0
@@ -29,6 +30,7 @@ flutter:
   assets:
     - lib/assets/icons/app_icon.png
     - lib/assets/icons/google_sign_in/
+    - .env
 
 flutter_launcher_icons:
   android: true

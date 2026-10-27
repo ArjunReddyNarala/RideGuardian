@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
+import '../core/config/env_config.dart';
+
 class ApiClient {
   ApiClient._();
 
   static final ApiClient instance = ApiClient._();
 
-  static const String baseUrl = 'http://192.168.1.15:3000';
+  String get baseUrl => EnvConfig.backendBaseUrl;
 
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
 

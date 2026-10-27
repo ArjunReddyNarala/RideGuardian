@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -11,6 +12,7 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index({ unique: true })
   @Column({ name: 'firebase_uid', length: 128, unique: true })
   firebaseUid: string;
 

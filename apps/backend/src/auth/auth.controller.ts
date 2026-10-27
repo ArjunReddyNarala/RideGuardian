@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { DecodedIdToken } from 'firebase-admin/auth';
+import { QueryFailedError } from 'typeorm';
 
 import { CurrentUser } from './decorators/current-user.decorator.js';
 import { FirebaseAuthGuard } from './guards/firebase-auth.guard.js';
@@ -26,11 +27,7 @@ export class AuthController {
   @UseGuards(FirebaseAuthGuard)
   async register(
     @CurrentUser() firebaseUser: DecodedIdToken,
-    @Body()
-    body: {
-      phone?: string;
-      profileImageUrl?: string;
-    },
+    @Body() body: { phone?: string; profileImageUrl?: string },
   ) {
     const existingUser = await this.usersService.getUserByFirebaseUid(
       firebaseUser.uid,
@@ -40,13 +37,33 @@ export class AuthController {
       return existingUser;
     }
 
-    return this.usersService.createUser({
-      firebaseUid: firebaseUser.uid,
-      name: firebaseUser.name ?? 'RideGuardian User',
-      email: firebaseUser.email,
-      phone: body.phone ?? firebaseUser.phone_number,
-      profileImageUrl: body.profileImageUrl ?? firebaseUser.picture,
-    });
+    try {
+      return await this.usersService.createUser({
+        firebaseUid: firebaseUser.uid,
+        name: firebaseUser.name ?? 'RideGuardian User',
+        email: firebaseUser.email,
+        phone: body.phone ?? firebaseUser.phone_number,
+        profileImageUrl: body.profileImageUrl ?? firebaseUser.picture,
+      });
+    } catch (error) {
+      // PostgreSQL unique-constraint violation.
+      // SQL Server and other databases use different error codes.
+      if (
+        error instanceof QueryFailedError &&
+        (error as QueryFailedError & { driverError?: { code?: string } })
+          .driverError?.code === '23505'
+      ) {
+        const user = await this.usersService.getUserByFirebaseUid(
+          firebaseUser.uid,
+        );
+
+        if (user) {
+          return user;
+        }
+      }
+
+      throw error;
+    }
   }
 
   @Get('me')

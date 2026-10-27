@@ -5,6 +5,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { InvitationRelationshipType } from '../enums/invitation-relationship-type.enum.js';
 
 @Entity('invitations')
 @Check(`"invitee_email" IS NOT NULL OR "invitee_phone" IS NOT NULL`)
@@ -34,6 +35,14 @@ export class Invitation {
   })
   inviteePhone: string | null;
 
+  @Column({
+    name: 'relationship_type',
+    type: 'varchar',
+    length: 30,
+    default: InvitationRelationshipType.I_MONITOR_THEM,
+  })
+  relationshipType: InvitationRelationshipType;
+
   @Column({ length: 100, unique: true })
   token: string;
 
@@ -48,4 +57,5 @@ export class Invitation {
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
+
 }

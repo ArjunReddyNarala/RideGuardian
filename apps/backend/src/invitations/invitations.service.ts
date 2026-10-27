@@ -5,14 +5,30 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'node:crypto';
-import { Repository } from 'typeorm';
+import { Brackets, DataSource, Repository } from 'typeorm';
 
 import { GuardianRelationshipsService } from '../guardian-relationships/guardian-relationships.service.js';
+import { GuardianRiderRelationship } from '../guardian-relationships/entities/guardian-rider-relationship.entity.js';
 import { UsersService } from '../users/users.service.js';
 
 import { Invitation } from './entities/invitation.entity.js';
+import { CreateInvitationDto } from './dto/create-invitation.dto.js';
+import { InvitationRelationshipType } from './enums/invitation-relationship-type.enum.js';
+
+export interface InvitationResponse {
+  id: string;
+  inviterId: string;
+  inviteeEmail: string | null;
+  inviteePhone: string | null;
+  relationshipType: InvitationRelationshipType;
+  status: string;
+  expiresAt: Date;
+  acceptedAt: Date | null;
+  createdAt: Date;
+}
 
 @Injectable()
 export class InvitationsService {
@@ -23,22 +39,17 @@ export class InvitationsService {
     private readonly usersService: UsersService,
 
     private readonly guardianRelationshipsService: GuardianRelationshipsService,
+
+    private readonly dataSource: DataSource,
   ) {}
 
-  /**
-   * Creates an invitation using either an email address or phone number.
-   *
-   * Exactly one recipient identifier must be provided.
-   */
   async createInvitation(
     inviterId: string,
-    inviteeEmail?: string,
-    inviteePhone?: string,
-  ): Promise<Invitation> {
-    const normalizedEmail = this.normalizeEmail(inviteeEmail);
-    const normalizedPhone = this.normalizePhone(inviteePhone);
-
-    // Exactly one of email or phone must be provided.
+    dto: CreateInvitationDto,
+  ): Promise<InvitationResponse & { token: string }> {
+    const normalizedEmail = this.normalizeEmail(dto.inviteeEmail);
+    const normalizedPhone = this.normalizePhone(dto.inviteePhone);
+    // Exactly one contact method must be supplied.
     if (
       (!normalizedEmail && !normalizedPhone) ||
       (normalizedEmail && normalizedPhone)
@@ -47,72 +58,87 @@ export class InvitationsService {
         'Provide either an invitee email or phone number, but not both',
       );
     }
-
-    // Make sure the inviter exists.
+    if (
+      !Object.values(InvitationRelationshipType).includes(dto.relationshipType)
+    ) {
+      throw new BadRequestException('Invalid invitation relationship type');
+    }
     const inviter = await this.usersService.getUserById(inviterId);
-
     if (!inviter) {
       throw new NotFoundException('Inviter not found');
     }
-
-    // Prevent inviting yourself.
+    let recipient: Awaited<ReturnType<UsersService['getUserByEmail']>> | null =
+      null;
     if (normalizedEmail) {
-      const existingUser =
-        await this.usersService.getUserByEmail(normalizedEmail);
-
-      if (existingUser?.id === inviterId) {
-        throw new BadRequestException(
-          'You cannot invite yourself',
+      recipient = await this.usersService.getUserByEmail(normalizedEmail);
+      if (recipient?.id === inviterId) {
+        throw new BadRequestException('You cannot invite yourself');
+      }
+    } else if (normalizedPhone) {
+      if (
+        inviter.phone &&
+        this.normalizePhone(inviter.phone) === normalizedPhone
+      ) {
+        throw new BadRequestException('You cannot invite yourself');
+      }
+      // If phone-based invitations should resolve registered users,
+      // add a phone lookup here when that method is available.
+    }
+    if (recipient) {
+      const relationships =
+        await this.guardianRelationshipsService.getRelationships(inviterId);
+      // Check only the requested direction.
+      // The reverse relationship must remain independent.
+      const existingRelationship = relationships.some((relationship) => {
+        if (
+          dto.relationshipType === InvitationRelationshipType.I_MONITOR_THEM
+        ) {
+          // The inviter wants to monitor the recipient.
+          return (
+            relationship.guardianId === inviterId &&
+            relationship.riderId === recipient!.id
+          );
+        }
+        // The recipient will monitor the inviter.
+        return (
+          relationship.guardianId === recipient!.id &&
+          relationship.riderId === inviterId
+        );
+      });
+      if (existingRelationship) {
+        throw new ConflictException(
+          'A guardian-rider relationship already exists in this direction',
         );
       }
     }
-
-    if (normalizedPhone && inviter.phone === normalizedPhone) {
-      throw new BadRequestException(
-        'You cannot invite yourself',
-      );
-    }
-
-    // Check whether a pending invitation already exists
-    // for this inviter and recipient.
-    const existingInvitation = await this.findPendingInvitation(
+    // Check for duplicate pending invitations according to the
+    // requested relationship direction.
+    await this.assertNoPendingInvitation(
       inviterId,
       normalizedEmail,
       normalizedPhone,
+      dto.relationshipType,
+      recipient?.id,
     );
-
-    if (existingInvitation) {
-      throw new ConflictException(
-        'A pending invitation already exists for this user',
-      );
-    }
-
-    const token = randomBytes(32).toString('hex');
-
     const invitation = this.invitationRepository.create({
       inviterId,
       inviteeEmail: normalizedEmail,
       inviteePhone: normalizedPhone,
-      token,
+      relationshipType: dto.relationshipType,
+      token: randomBytes(32).toString('hex'),
       status: 'PENDING',
-      expiresAt: new Date(
-        Date.now() + 7 * 24 * 60 * 60 * 1000,
-      ),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       acceptedAt: null,
     });
-
-    return this.invitationRepository.save(invitation);
+    const saved = await this.invitationRepository.save(invitation);
+    // Return the token only when creating an invitation.
+    return {
+      ...this.toResponse(saved),
+      token: saved.token,
+    };
   }
 
-  /**
-   * Returns invitations where the user is either:
-   * - the inviter, or
-   * - the recipient by email, or
-   * - the recipient by phone.
-   */
-  async getInvitations(
-    userId: string,
-  ): Promise<Invitation[]> {
+  async getInvitations(userId: string): Promise<InvitationResponse[]> {
     const user = await this.usersService.getUserById(userId);
 
     if (!user) {
@@ -121,113 +147,170 @@ export class InvitationsService {
 
     const query = this.invitationRepository
       .createQueryBuilder('invitation')
-      .where(
-        'invitation.inviter_id = :userId',
-        { userId },
-      );
+      .where('invitation.inviter_id = :userId', {
+        userId,
+      });
 
-    if (user.email) {
+    const email = this.normalizeEmail(user.email);
+    const phone = this.normalizePhone(user.phone);
+
+    if (email || phone) {
       query.orWhere(
-        'LOWER(invitation.invitee_email) = :email',
-        {
-          email: this.normalizeEmail(user.email),
-        },
+        new Brackets((qb) => {
+          if (email) {
+            qb.where('LOWER(invitation.invitee_email) = :email', { email });
+          }
+
+          if (phone) {
+            const condition = 'invitation.invitee_phone = :phone';
+
+            if (email) {
+              qb.orWhere(condition, { phone });
+            } else {
+              qb.where(condition, { phone });
+            }
+          }
+        }),
       );
     }
 
-    if (user.phone) {
-      query.orWhere(
-        'invitation.invitee_phone = :phone',
-        {
-          phone: this.normalizePhone(user.phone),
-        },
-      );
-    }
-
-    return query
-      .orderBy(
-        'invitation.created_at',
-        'DESC',
-      )
+    const invitations = await query
+      .orderBy('invitation.created_at', 'DESC')
       .getMany();
+
+    return invitations.map((invitation) => this.toResponse(invitation));
   }
 
-  /**
-   * Accepts an invitation and creates the corresponding
-   * guardian-rider relationship.
-   */
   async acceptInvitation(
     token: string,
-    riderId: string,
-  ): Promise<Invitation> {
-    const invitation =
-      await this.getInvitationByToken(token);
+    acceptingUserId: string,
+  ): Promise<InvitationResponse> {
+    const result = await this.dataSource.transaction(async (manager) => {
+      const invitationRepository = manager.getRepository(Invitation);
 
-    // Invitation must still be pending.
-    if (invitation.status !== 'PENDING') {
-      throw new BadRequestException(
-        `Invitation cannot be accepted. Current status: ${invitation.status}`,
+      const relationshipRepository = manager.getRepository(
+        GuardianRiderRelationship,
       );
-    }
 
-    // Check expiration.
-    if (invitation.expiresAt <= new Date()) {
-      invitation.status = 'EXPIRED';
+      const invitation = await invitationRepository
+        .createQueryBuilder('invitation')
+        .setLock('pessimistic_write')
+        .where('invitation.token = :token', { token })
+        .getOne();
 
-      await this.invitationRepository.save(
+      if (!invitation) {
+        throw new NotFoundException('Invitation not found');
+      }
+
+      if (invitation.status !== 'PENDING') {
+        throw new BadRequestException(
+          `Invitation cannot be accepted. Current status: ${invitation.status}`,
+        );
+      }
+
+      if (invitation.expiresAt <= new Date()) {
+        invitation.status = 'EXPIRED';
+        await invitationRepository.save(invitation);
+
+        // Return a result rather than throwing inside the transaction,
+        // otherwise the EXPIRED status update would be rolled back.
+        return {
+          expired: true as const,
+        };
+      }
+
+      if (invitation.inviterId === acceptingUserId) {
+        throw new BadRequestException('You cannot accept your own invitation');
+      }
+
+      const acceptingUser =
+        await this.usersService.getUserById(acceptingUserId);
+
+      if (!acceptingUser) {
+        throw new NotFoundException('Accepting user not found');
+      }
+
+      this.validateInvitationRecipient(
         invitation,
+        acceptingUser.email,
+        acceptingUser.phone,
       );
 
-      throw new BadRequestException(
-        'Invitation has expired',
-      );
+      let guardianId: string;
+      let riderId: string;
+
+      if (
+        invitation.relationshipType ===
+        InvitationRelationshipType.I_MONITOR_THEM
+      ) {
+        // Sender is guardian; accepting user is rider.
+        guardianId = invitation.inviterId;
+        riderId = acceptingUser.id;
+      } else if (
+        invitation.relationshipType ===
+        InvitationRelationshipType.THEY_MONITOR_ME
+      ) {
+        // Sender is rider; accepting user is guardian.
+        guardianId = acceptingUser.id;
+        riderId = invitation.inviterId;
+      } else {
+        throw new BadRequestException('Invalid invitation relationship type');
+      }
+
+      // Prevent duplicate relationships in either direction.
+      const existingRelationship = await relationshipRepository
+        .createQueryBuilder('relationship')
+        .where(
+          new Brackets((qb) => {
+            qb.where(
+              'relationship.guardian_id = :guardianId AND relationship.rider_id = :riderId',
+              { guardianId, riderId },
+            ).orWhere(
+              'relationship.guardian_id = :riderId AND relationship.rider_id = :guardianId',
+              { guardianId, riderId },
+            );
+          }),
+        )
+        .getOne();
+
+      if (existingRelationship) {
+        throw new ConflictException(
+          'A guardian-rider relationship already exists between these users',
+        );
+      }
+
+      const relationship = relationshipRepository.create({
+        guardianId,
+        riderId,
+        status: 'ACCEPTED',
+        acceptedAt: new Date(),
+      });
+
+      await relationshipRepository.save(relationship);
+
+      invitation.status = 'ACCEPTED';
+      invitation.acceptedAt = new Date();
+
+      await invitationRepository.save(invitation);
+
+      return {
+        expired: false as const,
+        invitation: this.toResponse(invitation),
+      };
+    });
+
+    if (result.expired) {
+      throw new BadRequestException('Invitation has expired');
     }
 
-    // The inviter cannot accept their own invitation.
-    if (invitation.inviterId === riderId) {
-      throw new BadRequestException(
-        'You cannot accept your own invitation',
-      );
-    }
-
-    const rider =
-      await this.usersService.getUserById(riderId);
-
-    if (!rider) {
-      throw new NotFoundException('Rider not found');
-    }
-
-    // Verify that the logged-in rider is the intended recipient.
-    this.validateInvitationRecipient(
-      invitation,
-      rider.email,
-      rider.phone,
-    );
-
-    // Create the accepted guardian-rider relationship.
-    await this.guardianRelationshipsService.createRelationship(
-      invitation.inviterId,
-      riderId,
-    );
-
-    // Mark invitation as accepted.
-    invitation.status = 'ACCEPTED';
-    invitation.acceptedAt = new Date();
-
-    return this.invitationRepository.save(
-      invitation,
-    );
+    return result.invitation;
   }
 
-  /**
-   * Declines an invitation.
-   */
   async declineInvitation(
     token: string,
-    riderId: string,
-  ): Promise<Invitation> {
-    const invitation =
-      await this.getInvitationByToken(token);
+    acceptingUserId: string,
+  ): Promise<InvitationResponse> {
+    const invitation = await this.getInvitationByToken(token);
 
     if (invitation.status !== 'PENDING') {
       throw new BadRequestException(
@@ -235,44 +318,41 @@ export class InvitationsService {
       );
     }
 
-    if (invitation.inviterId === riderId) {
+    if (invitation.inviterId === acceptingUserId) {
       throw new ForbiddenException(
         'The inviter cannot decline their own invitation',
       );
     }
 
-    const rider =
-      await this.usersService.getUserById(riderId);
+    const acceptingUser = await this.usersService.getUserById(acceptingUserId);
 
-    if (!rider) {
-      throw new NotFoundException('Rider not found');
+    if (!acceptingUser) {
+      throw new NotFoundException('User not found');
     }
 
-    // Verify that the logged-in rider is the intended recipient.
     this.validateInvitationRecipient(
       invitation,
-      rider.email,
-      rider.phone,
+      acceptingUser.email,
+      acceptingUser.phone,
     );
+
+    if (invitation.expiresAt <= new Date()) {
+      invitation.status = 'EXPIRED';
+      await this.invitationRepository.save(invitation);
+
+      throw new BadRequestException('Invitation has expired');
+    }
 
     invitation.status = 'DECLINED';
 
-    return this.invitationRepository.save(
-      invitation,
-    );
+    return this.toResponse(await this.invitationRepository.save(invitation));
   }
 
-  /**
-   * Cancels a pending invitation.
-   *
-   * Only the user who created the invitation can cancel it.
-   */
   async cancelInvitation(
     invitationId: string,
     inviterId: string,
-  ): Promise<Invitation> {
-    const invitation =
-      await this.getInvitationOrThrow(invitationId);
+  ): Promise<InvitationResponse> {
+    const invitation = await this.getInvitationOrThrow(invitationId);
 
     if (invitation.inviterId !== inviterId) {
       throw new ForbiddenException(
@@ -288,109 +368,143 @@ export class InvitationsService {
 
     invitation.status = 'CANCELLED';
 
-    return this.invitationRepository.save(
-      invitation,
-    );
+    return this.toResponse(await this.invitationRepository.save(invitation));
   }
 
-  /**
-   * Finds an existing pending invitation for the
-   * specified recipient.
-   */
-  private async findPendingInvitation(
+  private async assertNoPendingInvitation(
     inviterId: string,
-    inviteeEmail: string | null,
-    inviteePhone: string | null,
-  ): Promise<Invitation | null> {
-    const query = this.invitationRepository
-      .createQueryBuilder('invitation')
-      .where(
-        'invitation.inviter_id = :inviterId',
-        { inviterId },
-      )
-      .andWhere(
-        'invitation.status = :status',
-        { status: 'PENDING' },
-      );
-
-    if (inviteeEmail) {
-      query.andWhere(
-        'LOWER(invitation.invitee_email) = :email',
-        {
-          email: inviteeEmail,
-        },
-      );
-    }
-
-    if (inviteePhone) {
-      query.andWhere(
-        'invitation.invitee_phone = :phone',
-        {
-          phone: inviteePhone,
-        },
-      );
-    }
-
-    return query.getOne();
-  }
-
-  /**
-   * Retrieves an invitation by its secure token.
-   */
-  private async getInvitationByToken(
-    token: string,
-  ): Promise<Invitation> {
-    const invitation =
-      await this.invitationRepository.findOne({
-        where: { token },
-      });
-
-    if (!invitation) {
-      throw new NotFoundException(
-        'Invitation not found',
-      );
-    }
-
-    return invitation;
-  }
-
-  /**
-   * Retrieves an invitation by ID.
-   */
-  private async getInvitationOrThrow(
-    id: string,
-  ): Promise<Invitation> {
-    const invitation =
-      await this.invitationRepository.findOne({
-        where: { id },
-      });
-
-    if (!invitation) {
-      throw new NotFoundException(
-        'Invitation not found',
-      );
-    }
-
-    return invitation;
-  }
-
-  /**
-   * Validates that the logged-in user is the
-   * intended invitation recipient.
-   */
-  private validateInvitationRecipient(
-    invitation: Invitation,
     email: string | null,
     phone: string | null,
+    relationshipType: InvitationRelationshipType,
+    recipientId?: string,
+  ): Promise<void> {
+    const oppositeRelationshipType =
+      relationshipType === InvitationRelationshipType.I_MONITOR_THEM
+        ? InvitationRelationshipType.THEY_MONITOR_ME
+        : InvitationRelationshipType.I_MONITOR_THEM;
+
+    // Check for an existing pending invitation in the same direction.
+    const sameDirectionQuery = this.invitationRepository
+      .createQueryBuilder('invitation')
+      .where('invitation.status = :status', {
+        status: 'PENDING',
+      })
+      .andWhere('invitation.inviter_id = :inviterId', {
+        inviterId,
+      })
+      .andWhere('invitation.relationship_type = :relationshipType', {
+        relationshipType,
+      });
+
+    if (email) {
+      sameDirectionQuery.andWhere('LOWER(invitation.invitee_email) = :email', {
+        email,
+      });
+    } else if (phone) {
+      sameDirectionQuery.andWhere('invitation.invitee_phone = :phone', {
+        phone,
+      });
+    }
+
+    if (await sameDirectionQuery.getOne()) {
+      throw new ConflictException(
+        'A pending invitation already exists for this recipient and relationship type',
+      );
+    }
+
+    // If the recipient is not registered, the reverse direction
+    // cannot reliably be identified.
+    if (!recipientId) {
+      return;
+    }
+
+    const inviter = await this.usersService.getUserById(inviterId);
+
+    if (!inviter) {
+      throw new NotFoundException('Inviter not found');
+    }
+
+    const inviterEmail = this.normalizeEmail(inviter.email);
+    const inviterPhone = this.normalizePhone(inviter.phone);
+
+    // Check for a pending invitation from the recipient to the inviter.
+    // It is a duplicate only when it requests the opposite relationship.
+    const reverseQuery = this.invitationRepository
+      .createQueryBuilder('invitation')
+      .where('invitation.status = :status', {
+        status: 'PENDING',
+      })
+      .andWhere('invitation.inviter_id = :recipientId', {
+        recipientId,
+      })
+      .andWhere('invitation.relationship_type = :oppositeRelationshipType', {
+        oppositeRelationshipType,
+      });
+
+    const recipientContactConditions: string[] = [];
+    const recipientContactParameters: Record<string, string> = {};
+
+    if (inviterEmail) {
+      recipientContactConditions.push(
+        'LOWER(invitation.invitee_email) = :inviterEmail',
+      );
+      recipientContactParameters.inviterEmail = inviterEmail;
+    }
+
+    if (inviterPhone) {
+      recipientContactConditions.push(
+        'invitation.invitee_phone = :inviterPhone',
+      );
+      recipientContactParameters.inviterPhone = inviterPhone;
+    }
+
+    if (recipientContactConditions.length === 0) {
+      return;
+    }
+
+    reverseQuery.andWhere(
+      `(${recipientContactConditions.join(' OR ')})`,
+      recipientContactParameters,
+    );
+
+    if (await reverseQuery.getOne()) {
+      throw new ConflictException(
+        'A pending invitation already exists for this relationship direction',
+      );
+    }
+  }
+
+  private async getInvitationByToken(token: string): Promise<Invitation> {
+    const invitation = await this.invitationRepository.findOne({
+      where: { token },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    return invitation;
+  }
+
+  private async getInvitationOrThrow(id: string): Promise<Invitation> {
+    const invitation = await this.invitationRepository.findOne({
+      where: { id },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    return invitation;
+  }
+
+  private validateInvitationRecipient(
+    invitation: Invitation,
+    email: string | null | undefined,
+    phone: string | null | undefined,
   ): void {
     if (invitation.inviteeEmail) {
-      const normalizedUserEmail =
-        this.normalizeEmail(email);
-
-      if (
-        normalizedUserEmail !==
-        invitation.inviteeEmail
-      ) {
+      if (this.normalizeEmail(email) !== invitation.inviteeEmail) {
         throw new ForbiddenException(
           'This invitation was not sent to your email',
         );
@@ -400,13 +514,7 @@ export class InvitationsService {
     }
 
     if (invitation.inviteePhone) {
-      const normalizedUserPhone =
-        this.normalizePhone(phone);
-
-      if (
-        normalizedUserPhone !==
-        invitation.inviteePhone
-      ) {
+      if (this.normalizePhone(phone) !== invitation.inviteePhone) {
         throw new ForbiddenException(
           'This invitation was not sent to your phone',
         );
@@ -415,43 +523,36 @@ export class InvitationsService {
       return;
     }
 
-    throw new BadRequestException(
-      'Invitation has no valid recipient',
-    );
+    throw new BadRequestException('Invitation has no valid recipient');
   }
 
-  /**
-   * Normalizes an email address for consistent
-   * storage and comparison.
-   */
-  private normalizeEmail(
-    email?: string | null,
-  ): string | null {
+  private normalizeEmail(email: string | null | undefined): string | null {
     if (!email) {
       return null;
     }
 
-    const normalized = email.trim().toLowerCase();
-
-    return normalized || null;
+    return email.trim().toLowerCase() || null;
   }
 
-  /**
-   * Normalizes a phone number.
-   *
-   * For now we trim whitespace. A proper E.164
-   * normalization can be added later using a
-   * phone-number library.
-   */
-  private normalizePhone(
-    phone?: string | null,
-  ): string | null {
+  private normalizePhone(phone: string | null | undefined): string | null {
     if (!phone) {
       return null;
     }
 
-    const normalized = phone.trim();
+    return phone.trim() || null;
+  }
 
-    return normalized || null;
+  private toResponse(invitation: Invitation): InvitationResponse {
+    return {
+      id: invitation.id,
+      inviterId: invitation.inviterId,
+      inviteeEmail: invitation.inviteeEmail,
+      inviteePhone: invitation.inviteePhone,
+      relationshipType: invitation.relationshipType,
+      status: invitation.status,
+      expiresAt: invitation.expiresAt,
+      acceptedAt: invitation.acceptedAt,
+      createdAt: invitation.createdAt,
+    };
   }
 }

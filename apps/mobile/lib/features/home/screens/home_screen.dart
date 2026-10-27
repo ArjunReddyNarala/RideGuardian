@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../widgets/live_map_card.dart';
+import '../../guardians/screens/guardians_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -50,12 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
         description:
             'Live location tracking and speed monitoring will be available here.',
       ),
-      const _PlaceholderPage(
-        icon: Icons.people_outline_rounded,
-        title: 'Your Guardians',
-        description:
-            'Invite guardians and manage your trusted contacts here.',
-      ),
+      const GuardiansScreen(),
       const _PlaceholderPage(
         icon: Icons.person_outline_rounded,
         title: 'Your Profile',
