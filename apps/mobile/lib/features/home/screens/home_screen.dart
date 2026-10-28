@@ -48,24 +48,19 @@ class _HomeScreenState extends State<HomeScreen> {
       const _PlaceholderPage(
         icon: Icons.play_circle_outline_rounded,
         title: 'Start a Ride',
-        description:
-            'Live location tracking and speed monitoring will be available here.',
+        description: 'Live location tracking and speed monitoring will be available here.',
       ),
       const GuardiansScreen(),
       const _PlaceholderPage(
         icon: Icons.person_outline_rounded,
         title: 'Your Profile',
-        description:
-            'Manage your account and app preferences here.',
+        description: 'Manage your account and app preferences here.',
       ),
     ];
 
     return Scaffold(
       body: SafeArea(
-        child: IndexedStack(
-          index: _selectedIndex,
-          children: pages,
-        ),
+        child: IndexedStack(index: _selectedIndex, children: pages),
       ),
       bottomNavigationBar: _buildFloatingBottomNavigationBar(context),
     );
@@ -110,9 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text(
-                        'Notifications will be available here.',
-                      ),
+                      content: Text('Notifications will be available here.'),
                     ),
                   );
                 },
@@ -250,10 +243,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ? NetworkImage(photoUrl)
             : null,
         child: photoUrl == null || photoUrl.isEmpty
-            ? Icon(
-                Icons.person_rounded,
-                color: colorScheme.onSurfaceVariant,
-              )
+            ? Icon(Icons.person_rounded, color: colorScheme.onSurfaceVariant)
             : null,
       ),
     );
@@ -274,18 +264,12 @@ class _HomeScreenState extends State<HomeScreen> {
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: colorScheme.outlineVariant,
-        ),
+        border: Border.all(color: colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            size: 27,
-            color: AppColors.primary,
-          ),
+          Icon(icon, size: 27, color: AppColors.primary),
           const SizedBox(height: 14),
           Text(
             value,
@@ -314,16 +298,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 18,
-        vertical: 24,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: colorScheme.outlineVariant,
-        ),
+        border: Border.all(color: colorScheme.outlineVariant),
       ),
       child: Column(
         children: [
@@ -362,10 +341,7 @@ class _HomeScreenState extends State<HomeScreen> {
       minimum: const EdgeInsets.fromLTRB(14, 0, 14, 10),
       child: Container(
         height: 76,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 7,
-          vertical: 7,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: BorderRadius.circular(30),
@@ -376,9 +352,7 @@ class _HomeScreenState extends State<HomeScreen> {
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(
-                alpha: colorScheme.brightness == Brightness.dark
-                    ? 0.22
-                    : 0.08,
+                alpha: colorScheme.brightness == Brightness.dark ? 0.22 : 0.08,
               ),
               blurRadius: 24,
               offset: const Offset(0, 8),
@@ -477,10 +451,7 @@ class _HomeScreenState extends State<HomeScreen> {
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
               margin: const EdgeInsets.symmetric(horizontal: 2),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 2,
-                vertical: 5,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
               decoration: BoxDecoration(
                 color: isSelected
                     ? AppColors.primary.withValues(alpha: 0.13)
@@ -548,11 +519,7 @@ class _PlaceholderPage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 64,
-              color: AppColors.primary,
-            ),
+            Icon(icon, size: 64, color: AppColors.primary),
             const SizedBox(height: 20),
             Text(
               title,

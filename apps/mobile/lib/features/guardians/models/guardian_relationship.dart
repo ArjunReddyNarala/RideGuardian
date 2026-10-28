@@ -37,14 +37,10 @@ class GuardianRelationship {
       acceptedAt: _parseDate(json['acceptedAt']),
       revokedAt: _parseDate(json['revokedAt']),
       guardian: json['guardian'] is Map<String, dynamic>
-          ? RelationshipUser.fromJson(
-              json['guardian'] as Map<String, dynamic>,
-            )
+          ? RelationshipUser.fromJson(json['guardian'] as Map<String, dynamic>)
           : null,
       rider: json['rider'] is Map<String, dynamic>
-          ? RelationshipUser.fromJson(
-              json['rider'] as Map<String, dynamic>,
-            )
+          ? RelationshipUser.fromJson(json['rider'] as Map<String, dynamic>)
           : null,
     );
   }

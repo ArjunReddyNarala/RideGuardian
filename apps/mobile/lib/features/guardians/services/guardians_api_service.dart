@@ -4,8 +4,7 @@ import '../models/guardian_invitation.dart';
 import '../models/guardian_relationship.dart';
 import '../models/rider_safety_settings.dart';
 
-class GuardiansApiService
-{
+class GuardiansApiService {
   GuardiansApiService(this._apiClient);
 
   final ApiClient _apiClient;
@@ -14,143 +13,105 @@ class GuardiansApiService
   // Guardian relationships
   // ------------------------------------------------------------
 
-  Future<List<GuardianRelationship>> getRelationships() async
-  {
-    final response = await _apiClient.get(
-      ApiUrls.guardianRelationships
-    );
+  Future<List<GuardianRelationship>> getRelationships() async {
+    final response = await _apiClient.get(ApiUrls.guardianRelationships);
 
     final data = _extractList(response);
 
-    return data
-      .map(
-        (json) => GuardianRelationship.fromJson(json)
-      )
-      .toList();
+    return data.map((json) => GuardianRelationship.fromJson(json)).toList();
   }
 
-  Future<void> revokeRelationship(String relationshipId) async
-  {
-    await _apiClient.patch(
-      ApiUrls.revokeRelationship(relationshipId)
-    );
+  Future<void> revokeRelationship(String relationshipId) async {
+    await _apiClient.patch(ApiUrls.revokeRelationship(relationshipId));
   }
 
   // ------------------------------------------------------------
   // Invitations
   // ------------------------------------------------------------
 
-  Future<List<GuardianInvitation>> getInvitations() async
-  {
+  Future<List<GuardianInvitation>> getInvitations() async {
     final response = await _apiClient.get(ApiUrls.invitations);
 
-    return _extractList(response)
-      .map(GuardianInvitation.fromJson)
-      .toList();
+    return _extractList(response).map(GuardianInvitation.fromJson).toList();
   }
 
   Future<Map<String, dynamic>> createInvitation({
     required String relationshipType,
     String? email,
-    String? phone
-  }) async
-  {
+    String? phone,
+  }) async {
     final normalizedEmail = email?.trim().toLowerCase();
     final normalizedPhone = phone?.trim();
 
     if ((normalizedEmail == null || normalizedEmail.isEmpty) &&
-      (normalizedPhone == null || normalizedPhone.isEmpty)) 
-    {
+        (normalizedPhone == null || normalizedPhone.isEmpty)) {
       throw ArgumentError('An email address or phone number is required.');
     }
 
     if (normalizedEmail != null &&
-      normalizedEmail.isNotEmpty &&
-      normalizedPhone != null &&
-      normalizedPhone.isNotEmpty) 
-    {
+        normalizedEmail.isNotEmpty &&
+        normalizedPhone != null &&
+        normalizedPhone.isNotEmpty) {
       throw ArgumentError(
-        'Provide either an email address or a phone number, not both.'
+        'Provide either an email address or a phone number, not both.',
       );
     }
 
-    final body = <String, dynamic>
-    {
+    final body = <String, dynamic>{
       'relationshipType': relationshipType,
       if (normalizedEmail != null && normalizedEmail.isNotEmpty)
-      'inviteeEmail': normalizedEmail,
+        'inviteeEmail': normalizedEmail,
       if (normalizedPhone != null && normalizedPhone.isNotEmpty)
-      'inviteePhone': normalizedPhone
+        'inviteePhone': normalizedPhone,
     };
 
-    final response = await _apiClient.post(
-      ApiUrls.invitations,
-      body: body
-    );
+    final response = await _apiClient.post(ApiUrls.invitations, body: body);
 
-    if (response is Map<String, dynamic>) 
-    {
+    if (response is Map<String, dynamic>) {
       return response;
     }
 
     return <String, dynamic>{};
   }
 
-  Future<void> acceptInvitation(String token) async
-  {
-    await _apiClient.patch(
-      ApiUrls.acceptInvitation(token)
-    );
+  Future<void> acceptInvitation(String token) async {
+    await _apiClient.patch(ApiUrls.acceptInvitation(token));
   }
 
-  Future<void> declineInvitation(String token) async
-  {
-    await _apiClient.patch(
-      ApiUrls.declineInvitation(token)
-    );
+  Future<void> declineInvitation(String token) async {
+    await _apiClient.patch(ApiUrls.declineInvitation(token));
   }
 
-  Future<void> cancelInvitation(String invitationId) async
-  {
-    await _apiClient.patch(
-      ApiUrls.cancelInvitation(invitationId)
-    );
+  Future<void> cancelInvitation(String invitationId) async {
+    await _apiClient.patch(ApiUrls.cancelInvitation(invitationId));
   }
 
   // ------------------------------------------------------------
   // Rider safety settings
   // ------------------------------------------------------------
 
-  Future<List<RiderSafetySettings>> getSafetySettings() async
-  {
-    final response = await _apiClient.get(
-      ApiUrls.riderSafetySettings
-    );
+  Future<List<RiderSafetySettings>> getSafetySettings() async {
+    final response = await _apiClient.get(ApiUrls.riderSafetySettings);
 
-    return _extractList(response)
-      .map(RiderSafetySettings.fromJson)
-      .toList();
+    return _extractList(response).map(RiderSafetySettings.fromJson).toList();
   }
 
   Future<void> updateSafetySettings({
     required String riderId,
     double? maxSpeedKmh,
     bool? speedAlertEnabled,
-    int? speedAlertCooldownSeconds
-  }) async
-  {
-    final body = <String, dynamic>
-    {
+    int? speedAlertCooldownSeconds,
+  }) async {
+    final body = <String, dynamic>{
       if (maxSpeedKmh != null) 'maxSpeedKmh': maxSpeedKmh,
-      if (speedAlertEnabled != null)
-      'speedAlertEnabled': speedAlertEnabled,
+      if (speedAlertEnabled != null) 'speedAlertEnabled': speedAlertEnabled,
       if (speedAlertCooldownSeconds != null)
-      'speedAlertCooldownSeconds': speedAlertCooldownSeconds
+        'speedAlertCooldownSeconds': speedAlertCooldownSeconds,
     };
 
     await _apiClient.put(
       ApiUrls.riderSafetySettingsForRider(riderId),
-      body: body
+      body: body,
     );
   }
 
@@ -158,32 +119,28 @@ class GuardiansApiService
   // Response parsing
   // ------------------------------------------------------------
 
-  List<Map<String, dynamic>> _extractList(dynamic response) 
-  {
-    if (response is List) 
-    {
+  List<Map<String, dynamic>> _extractList(dynamic response) {
+    if (response is List) {
       return response
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-    }
-
-    if (response is Map<String, dynamic>) 
-    {
-      // Supports common paginated/enveloped API response formats.
-      final data = response['data'] ?? response['items'];
-
-      if (data is List) 
-      {
-        return data
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
           .toList();
+    }
+
+    if (response is Map<String, dynamic>) {
+      // Supports common paginated/enveloped API response formats.
+      final data = response['data'] ?? response['items'];
+
+      if (data is List) {
+        return data
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
       }
     }
 
     throw const FormatException(
-      'The server returned an unexpected list response.'
+      'The server returned an unexpected list response.',
     );
   }
 }

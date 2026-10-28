@@ -210,13 +210,13 @@ class _LiveMapCardState extends State<LiveMapCard> {
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
           color: isDark
-              ? Colors.white.withOpacity(0.07)
-              : Colors.black.withOpacity(0.06),
+              ? Colors.white.withValues(alpha: 0.07)
+              : Colors.black.withValues(alpha: 0.06),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.12 : 0.04),
+            color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.04),
             blurRadius: 22,
             spreadRadius: 1,
             offset: const Offset(0, 8),
@@ -430,10 +430,10 @@ class _LiveMapCardState extends State<LiveMapCard> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          backgroundColor.withOpacity(0.16),
+                          backgroundColor.withValues(alpha: 0.16),
                           Colors.transparent,
                           Colors.transparent,
-                          backgroundColor.withOpacity(0.18),
+                          backgroundColor.withValues(alpha: 0.18),
                         ],
                         stops: const [0.0, 0.16, 0.82, 1.0],
                       ),

@@ -56,20 +56,13 @@ class AuthService {
       );
     }
 
-    final credential = GoogleAuthProvider.credential(
-      idToken: idToken,
-    );
+    final credential = GoogleAuthProvider.credential(idToken: idToken);
 
-    final userCredential = await _firebaseAuth.signInWithCredential(
-      credential,
-    );
+    final userCredential = await _firebaseAuth.signInWithCredential(credential);
 
     // Register the user or retrieve the existing RideGuardian profile.
     // ApiClient attaches the Firebase ID token to this request.
-    await ApiClient.instance.post(
-      '/api/v1/auth/register',
-      body: {},
-    );
+    await ApiClient.instance.post('/api/v1/auth/register', body: {});
 
     return userCredential;
   }
@@ -125,9 +118,7 @@ class AuthService {
       smsCode: smsCode,
     );
 
-    final userCredential = await _firebaseAuth.signInWithCredential(
-      credential,
-    );
+    final userCredential = await _firebaseAuth.signInWithCredential(credential);
 
     return userCredential;
   }

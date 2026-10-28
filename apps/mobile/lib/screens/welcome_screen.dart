@@ -263,9 +263,7 @@ class WelcomeScreen extends StatelessWidget {
       if (!context.mounted) return;
 
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => const HomeScreen(),
-        ),
+        MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
       );
     } catch (error) {
       if (!context.mounted) return;

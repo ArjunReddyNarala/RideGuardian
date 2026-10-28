@@ -21,9 +21,7 @@ class FloatingBottomNavBar extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final isDarkMode = theme.brightness == Brightness.dark;
 
-    final barBackground = isDarkMode
-        ? const Color(0xFF192421)
-        : Colors.white;
+    final barBackground = isDarkMode ? const Color(0xFF192421) : Colors.white;
 
     final borderColor = isDarkMode
         ? const Color(0xFF34433E)
@@ -46,9 +44,7 @@ class FloatingBottomNavBar extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(
-                  alpha: isDarkMode ? 0.12 : 0.06,
-                ),
+                color: Colors.black.withValues(alpha: isDarkMode ? 0.12 : 0.06),
                 blurRadius: 18,
                 offset: const Offset(0, 5),
               ),
@@ -175,10 +171,7 @@ class FloatingBottomNavBar extends StatelessWidget {
         selected: isSelected,
         label: label,
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 2,
-            vertical: 5,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -187,10 +180,7 @@ class FloatingBottomNavBar extends StatelessWidget {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeInOut,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 2,
-                  vertical: 7,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? activeColor.withValues(alpha: 0.12)

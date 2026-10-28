@@ -1,16 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
 import '../config/env_config.dart';
+
 /// Represents an error returned by the API client.
 class ApiException implements Exception {
-  const ApiException({
-    required this.message,
-    this.statusCode,
-    this.cause,
-  });
+  const ApiException({required this.message, this.statusCode, this.cause});
   final String message;
   final int? statusCode;
   final Object? cause;
@@ -22,47 +21,37 @@ class ApiException implements Exception {
     return message;
   }
 }
+
 class ApiClient {
   ApiClient({
     http.Client? httpClient,
     FirebaseAuth? firebaseAuth,
     this.timeout = const Duration(seconds: 30),
-  })  : _httpClient = httpClient ?? http.Client(),
-        _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
+  }) : _httpClient = httpClient ?? http.Client(),
+       _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
   final http.Client _httpClient;
   final FirebaseAuth _firebaseAuth;
+
   /// Maximum time allowed for an HTTP request.
   final Duration timeout;
+
   /// Builds a URI while avoiding duplicate or missing slashes.
-  Uri _buildUri(
-    String path, {
-    Map<String, String>? queryParameters,
-  }) {
+  Uri _buildUri(String path, {Map<String, String>? queryParameters}) {
     final baseUrl = EnvConfig.backendBaseUrl.trim();
     if (baseUrl.isEmpty) {
-      throw const ApiException(
-        message: 'Backend base URL is not configured.',
-      );
+      throw const ApiException(message: 'Backend base URL is not configured.');
     }
-    final normalizedBaseUrl = baseUrl.replaceFirst(
-      RegExp(r'/+$'),
-      '',
-    );
-    final normalizedPath = path.startsWith('/')
-        ? path
-        : '/$path';
+    final normalizedBaseUrl = baseUrl.replaceFirst(RegExp(r'/+$'), '');
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
     final uri = Uri.parse('$normalizedBaseUrl$normalizedPath');
     if (queryParameters == null || queryParameters.isEmpty) {
       return uri;
     }
-    return uri.replace(
-      queryParameters: queryParameters,
-    );
+    return uri.replace(queryParameters: queryParameters);
   }
+
   /// Creates request headers with the Firebase ID token.
-  Future<Map<String, String>> _headers({
-    bool jsonContent = true,
-  }) async {
+  Future<Map<String, String>> _headers({bool jsonContent = true}) async {
     final user = _firebaseAuth.currentUser;
     if (user == null) {
       throw const ApiException(
@@ -73,7 +62,8 @@ class ApiClient {
       final token = await user.getIdToken().timeout(timeout);
       if (token == null || token.isEmpty) {
         throw const ApiException(
-          message: 'Unable to obtain the Firebase authentication token. '
+          message:
+              'Unable to obtain the Firebase authentication token. '
               'Please sign in again.',
         );
       }
@@ -93,24 +83,20 @@ class ApiClient {
       debugPrint(
         'Firebase authentication error: ${error.code} - ${error.message}',
       );
-      throw ApiException(
-        message: _firebaseErrorMessage(error),
-        cause: error,
-      );
+      throw ApiException(message: _firebaseErrorMessage(error), cause: error);
     } catch (error) {
       debugPrint('Failed to obtain Firebase ID token: $error');
       throw ApiException(
-        message: 'Unable to authenticate your request. '
+        message:
+            'Unable to authenticate your request. '
             'Please sign in again and retry.',
         cause: error,
       );
     }
   }
+
   /// Sends a GET request.
-  Future<dynamic> get(
-    String path, {
-    Map<String, String>? queryParameters,
-  }) {
+  Future<dynamic> get(String path, {Map<String, String>? queryParameters}) {
     return _request(
       method: 'GET',
       path: path,
@@ -118,39 +104,30 @@ class ApiClient {
       jsonContent: false,
     );
   }
+
   /// Sends a POST request.
-  Future<dynamic> post(
-    String path, {
-    Map<String, dynamic>? body,
-  }) {
+  Future<dynamic> post(String path, {Map<String, dynamic>? body}) {
     return _request(
       method: 'POST',
       path: path,
       body: body ?? <String, dynamic>{},
     );
   }
+
   /// Sends a PATCH request.
-  Future<dynamic> patch(
-    String path, {
-    Map<String, dynamic>? body,
-  }) {
+  Future<dynamic> patch(String path, {Map<String, dynamic>? body}) {
     return _request(
       method: 'PATCH',
       path: path,
       body: body ?? <String, dynamic>{},
     );
   }
+
   /// Sends a PUT request.
-  Future<dynamic> put(
-    String path, {
-    required Map<String, dynamic> body,
-  }) {
-    return _request(
-      method: 'PUT',
-      path: path,
-      body: body,
-    );
+  Future<dynamic> put(String path, {required Map<String, dynamic> body}) {
+    return _request(method: 'PUT', path: path, body: body);
   }
+
   /// Centralized request execution and error handling.
   Future<dynamic> _request({
     required String method,
@@ -160,22 +137,14 @@ class ApiClient {
     bool jsonContent = true,
   }) async {
     try {
-      final uri = _buildUri(
-        path,
-        queryParameters: queryParameters,
-      );
-      final headers = await _headers(
-        jsonContent: jsonContent,
-      );
+      final uri = _buildUri(path, queryParameters: queryParameters);
+      final headers = await _headers(jsonContent: jsonContent);
       debugPrint('API request: $method $uri');
       late final http.Response response;
       switch (method) {
         case 'GET':
           response = await _httpClient
-              .get(
-                uri,
-                headers: headers,
-              )
+              .get(uri, headers: headers)
               .timeout(timeout);
         case 'POST':
           response = await _httpClient
@@ -202,9 +171,7 @@ class ApiClient {
               )
               .timeout(timeout);
         default:
-          throw ApiException(
-            message: 'Unsupported HTTP method: $method',
-          );
+          throw ApiException(message: 'Unsupported HTTP method: $method');
       }
       debugPrint(
         'API response: $method $uri '
@@ -216,14 +183,16 @@ class ApiClient {
     } on TimeoutException catch (error) {
       debugPrint('API request timed out: $method $path');
       throw ApiException(
-        message: 'The request timed out. Check your connection '
+        message:
+            'The request timed out. Check your connection '
             'and try again.',
         cause: error,
       );
     } on http.ClientException catch (error) {
       debugPrint('Network request failed: $error');
       throw ApiException(
-        message: 'Unable to connect to the backend. '
+        message:
+            'Unable to connect to the backend. '
             'Check your network connection and make sure the server '
             'is running and accessible.',
         cause: error,
@@ -243,6 +212,7 @@ class ApiClient {
       );
     }
   }
+
   /// Decodes the response and converts unsuccessful HTTP responses
   /// into ApiException instances.
   dynamic _decodeResponse(http.Response response) {
@@ -256,36 +226,23 @@ class ApiClient {
         decoded = responseBody;
       }
     }
-    if (response.statusCode >= 200 &&
-        response.statusCode < 300) {
+    if (response.statusCode >= 200 && response.statusCode < 300) {
       return decoded;
     }
-    final message = _extractErrorMessage(
-      decoded,
-      response.statusCode,
-    );
-    debugPrint(
-      'API error: HTTP ${response.statusCode} - $message',
-    );
-    throw ApiException(
-      message: message,
-      statusCode: response.statusCode,
-    );
+    final message = _extractErrorMessage(decoded, response.statusCode);
+    debugPrint('API error: HTTP ${response.statusCode} - $message');
+    throw ApiException(message: message, statusCode: response.statusCode);
   }
+
   /// Extracts a useful message from common API error formats.
-  String _extractErrorMessage(
-    dynamic decoded,
-    int statusCode,
-  ) {
+  String _extractErrorMessage(dynamic decoded, int statusCode) {
     String? serverMessage;
     if (decoded is Map) {
       final message = decoded['message'];
       if (message is String && message.trim().isNotEmpty) {
         serverMessage = message.trim();
       } else if (message is List && message.isNotEmpty) {
-        serverMessage = message
-            .map((item) => item.toString())
-            .join(', ');
+        serverMessage = message.map((item) => item.toString()).join(', ');
       }
       if (serverMessage == null || serverMessage.isEmpty) {
         final error = decoded['error'];
@@ -333,6 +290,7 @@ class ApiClient {
         return 'The request could not be completed (HTTP $statusCode).';
     }
   }
+
   /// Provides user-friendly Firebase authentication errors.
   String _firebaseErrorMessage(FirebaseAuthException error) {
     switch (error.code) {
@@ -348,6 +306,7 @@ class ApiClient {
         return 'Authentication failed. Please sign in again.';
     }
   }
+
   /// Closes the underlying HTTP client.
   ///
   /// Call this only when the ApiClient is no longer needed.
