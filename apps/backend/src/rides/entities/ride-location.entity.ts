@@ -1,32 +1,22 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
-  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
 @Entity('ride_locations')
-@Index(['rideId', 'recordedAt'])
 export class RideLocation {
-  @PrimaryGeneratedColumn({
-    type: 'bigint',
-  })
+  @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string;
 
-  @Column({
-    name: 'ride_id',
-    type: 'uuid',
-  })
+  @Column({ name: 'ride_id', type: 'uuid' })
   rideId: string;
 
-  @Column({
-    type: 'double precision',
-  })
+  @Column({ type: 'double precision' })
   latitude: number;
 
-  @Column({
-    type: 'double precision',
-  })
+  @Column({ type: 'double precision' })
   longitude: number;
 
   @Column({
@@ -54,7 +44,7 @@ export class RideLocation {
   })
   altitude: number | null;
 
-  @Column({
+  @CreateDateColumn({
     name: 'recorded_at',
     type: 'timestamptz',
   })

@@ -2,11 +2,21 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../widgets/live_map_card.dart';
 import '../../guardians/screens/guardians_screen.dart';
+import '../../rides/models/ride.dart';
+import '../../rides/screens/active_ride_screen.dart';
+import '../../rides/screens/ride_start_screen.dart';
+import '../../rides/screens/rides_screen.dart';
+import '../../rides/services/rides_api_service.dart';
+import '../widgets/live_map_card.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({
+    super.key,
+    required this.ridesApiService,
+  });
+
+  final RidesApiService ridesApiService;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -14,6 +24,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+
+  late Future<List<Ride>> _recentRidesFuture;
 
   User? get _currentUser => FirebaseAuth.instance.currentUser;
 
@@ -37,19 +49,46 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final pages = [
+  void initState() {
+    super.initState();
+    _recentRidesFuture = _loadRecentRides();
+  }
+
+  Future<List<Ride>> _loadRecentRides() async {
+    final rides = await widget.ridesApiService.getRides();
+
+    rides.sort((a, b) => b.startedAt.compareTo(a.startedAt));
+
+    return rides;
+  }
+
+  Future<void> _refreshRecentRides() async {
+    final future = _loadRecentRides();
+
+    setState(() {
+      _recentRidesFuture = future;
+    });
+
+    await future;
+  }
+
+  void _navigateToTab(int index) {
+    if (_selectedIndex == index) {
+      return;
+    }
+
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  List<Widget> _buildPages() {
+    return [
       _buildDashboard(context),
-      const _PlaceholderPage(
-        icon: Icons.route_outlined,
-        title: 'Your Rides',
-        description: 'Your ride history will appear here.',
+      RidesScreen(
+        ridesApiService: widget.ridesApiService,
       ),
-      const _PlaceholderPage(
-        icon: Icons.play_circle_outline_rounded,
-        title: 'Start a Ride',
-        description: 'Live location tracking and speed monitoring will be available here.',
-      ),
+      const RideStartScreen(),
       const GuardiansScreen(),
       const _PlaceholderPage(
         icon: Icons.person_outline_rounded,
@@ -57,185 +96,163 @@ class _HomeScreenState extends State<HomeScreen> {
         description: 'Manage your account and app preferences here.',
       ),
     ];
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: IndexedStack(index: _selectedIndex, children: pages),
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: _buildPages(),
+        ),
       ),
       bottomNavigationBar: _buildFloatingBottomNavigationBar(context),
     );
   }
 
-  // Main dashboard.
+  // ---------------------------------------------------------------------------
+  // Dashboard
+  // ---------------------------------------------------------------------------
+
   Widget _buildDashboard(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Greeting, notifications, and profile picture.
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$_greeting,',
-                      style: textTheme.bodyLarge?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '$_firstName!',
-                      style: textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Notifications will be available here.'),
-                    ),
-                  );
-                },
-                tooltip: 'Notifications',
-                icon: Icon(
-                  Icons.notifications_none_rounded,
-                  size: 28,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(width: 8),
-              _buildProfileAvatar(colorScheme),
-            ],
-          ),
+    return RefreshIndicator(
+      onRefresh: _refreshRecentRides,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(context),
 
-          const SizedBox(height: 26),
+            const SizedBox(height: 26),
 
-          // Live Google Map.
-          const LiveMapCard(),
+            const LiveMapCard(),
 
-          const SizedBox(height: 18),
+            const SizedBox(height: 18),
 
-          // Main Start Ride action.
-          SizedBox(
-            width: double.infinity,
-            height: 58,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _selectedIndex = 2;
-                });
-              },
-              icon: const Icon(
-                Icons.navigation_rounded,
-                color: Colors.white,
-                size: 23,
-              ),
-              label: const Text(
-                'Start Ride',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-            ),
-          ),
+            _buildStartRideButton(),
 
-          const SizedBox(height: 22),
+            const SizedBox(height: 22),
 
-          // Dashboard statistics.
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard(
-                  context: context,
-                  title: 'My Guardians',
-                  value: '0',
-                  icon: Icons.people_alt_outlined,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: _buildStatCard(
-                  context: context,
-                  title: 'Rides I Covered',
-                  value: '0',
-                  icon: Icons.route_outlined,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 30),
-
-          // Recent rides heading.
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Recent Rides',
-                style: textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _selectedIndex = 1;
-                  });
-                },
-                child: const Text(
-                  'See all',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    context: context,
+                    title: 'My Guardians',
+                    value: '0',
+                    icon: Icons.people_alt_outlined,
                   ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: _buildStatCard(
+                    context: context,
+                    title: 'Rides I Covered',
+                    value: '0',
+                    icon: Icons.route_outlined,
+                  ),
+                ),
+              ],
+            ),
 
-          const SizedBox(height: 8),
+            const SizedBox(height: 30),
 
-          // Empty state until real ride history is connected.
-          _buildEmptyRidesCard(context),
-        ],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Recent Rides',
+                  style: textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _navigateToTab(1),
+                  child: const Text(
+                    'See all',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            _buildRecentRidesSection(context),
+          ],
+        ),
       ),
     );
   }
 
-  // Google account profile picture with a fallback icon.
+  // ---------------------------------------------------------------------------
+  // Dashboard header
+  // ---------------------------------------------------------------------------
+
+  Widget _buildHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$_greeting,',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '$_firstName!',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Notifications will be available here.'),
+              ),
+            );
+          },
+          tooltip: 'Notifications',
+          icon: Icon(
+            Icons.notifications_none_rounded,
+            size: 28,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(width: 8),
+        _buildProfileAvatar(colorScheme),
+      ],
+    );
+  }
+
   Widget _buildProfileAvatar(ColorScheme colorScheme) {
     final photoUrl = _currentUser?.photoURL;
 
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedIndex = 4;
-        });
-      },
+      onTap: () => _navigateToTab(4),
       child: CircleAvatar(
         radius: 22,
         backgroundColor: colorScheme.surfaceContainerHighest,
@@ -243,13 +260,54 @@ class _HomeScreenState extends State<HomeScreen> {
             ? NetworkImage(photoUrl)
             : null,
         child: photoUrl == null || photoUrl.isEmpty
-            ? Icon(Icons.person_rounded, color: colorScheme.onSurfaceVariant)
+            ? Icon(
+                Icons.person_rounded,
+                color: colorScheme.onSurfaceVariant,
+              )
             : null,
       ),
     );
   }
 
-  // Reusable statistics card.
+  // ---------------------------------------------------------------------------
+  // Start ride button
+  // ---------------------------------------------------------------------------
+
+  Widget _buildStartRideButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 58,
+      child: ElevatedButton.icon(
+        onPressed: () => _navigateToTab(2),
+        icon: const Icon(
+          Icons.navigation_rounded,
+          color: Colors.white,
+          size: 23,
+        ),
+        label: const Text(
+          'Start Ride',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Statistics
+  // ---------------------------------------------------------------------------
+
   Widget _buildStatCard({
     required BuildContext context,
     required String title,
@@ -269,7 +327,11 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 27, color: AppColors.primary),
+          Icon(
+            icon,
+            size: 27,
+            color: AppColors.primary,
+          ),
           const SizedBox(height: 14),
           Text(
             value,
@@ -291,24 +353,176 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Recent rides empty state.
+  // ---------------------------------------------------------------------------
+  // Recent rides
+  // ---------------------------------------------------------------------------
+
+  Widget _buildRecentRidesSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return FutureBuilder<List<Ride>>(
+      future: _recentRidesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            decoration: _cardDecoration(colorScheme),
+            child: const Center(
+              child: CircularProgressIndicator(
+                color: AppColors.primary,
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return _buildRecentRidesError(context);
+        }
+
+        final rides = snapshot.data ?? [];
+
+        if (rides.isEmpty) {
+          return _buildEmptyRidesCard(context);
+        }
+
+        final recentRides = rides.take(3).toList();
+
+        return Column(
+          children: [
+            ...recentRides.map(
+              (ride) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _buildRecentRideCard(context, ride),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildRecentRideCard(BuildContext context, Ride ride) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final isActive = ride.isActive;
+
+    final statusColor = isActive
+        ? Colors.green
+        : ride.status.toUpperCase() == 'COMPLETED'
+            ? Colors.blue
+            : colorScheme.onSurfaceVariant;
+
+    return Material(
+      color: colorScheme.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: isActive
+            ? () => _openActiveRide(ride)
+            : () => _navigateToTab(1),
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: colorScheme.outlineVariant,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.route_rounded,
+                  color: AppColors.primary,
+                  size: 24,
+                ),
+              ),
+
+              const SizedBox(width: 14),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ride.rideCode,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      _formatRideDate(context, ride.startedAt),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Row(
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: statusColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _formatStatus(ride.status),
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: statusColor,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              Icon(
+                Icons.chevron_right_rounded,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyRidesCard(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: colorScheme.outlineVariant),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 18,
+        vertical: 26,
       ),
+      decoration: _cardDecoration(colorScheme),
       child: Column(
         children: [
           Icon(
             Icons.route_outlined,
-            size: 38,
+            size: 40,
             color: colorScheme.onSurfaceVariant,
           ),
           const SizedBox(height: 10),
@@ -321,18 +535,126 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 5),
           Text(
-            'Your completed rides will appear here.',
+            'Your active and completed rides will appear here.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
+          ),
+          const SizedBox(height: 14),
+          TextButton.icon(
+            onPressed: () => _navigateToTab(2),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Start your first ride'),
           ),
         ],
       ),
     );
   }
 
-  // Floating navigation container.
+  Widget _buildRecentRidesError(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDecoration(colorScheme),
+      child: Column(
+        children: [
+          Icon(
+            Icons.cloud_off_outlined,
+            size: 36,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Unable to load rides',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Please check your connection and try again.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: _refreshRecentRides,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Active ride navigation
+  // ---------------------------------------------------------------------------
+
+  Future<void> _openActiveRide(Ride ride) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ActiveRideScreen(
+          ride: ride,
+          ridesApiService: widget.ridesApiService,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    await _refreshRecentRides();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Formatting helpers
+  // ---------------------------------------------------------------------------
+
+  String _formatRideDate(BuildContext context, DateTime dateTime) {
+    final localDateTime = dateTime.toLocal();
+    final localizations = MaterialLocalizations.of(context);
+
+    final date = localizations.formatMediumDate(localDateTime);
+    final time = localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(localDateTime),
+    );
+
+    return '$date • $time';
+  }
+
+  String _formatStatus(String status) {
+    switch (status.toUpperCase()) {
+      case 'ACTIVE':
+        return 'Active';
+      case 'COMPLETED':
+        return 'Completed';
+      case 'CANCELLED':
+        return 'Cancelled';
+      default:
+        return status;
+    }
+  }
+
+  BoxDecoration _cardDecoration(ColorScheme colorScheme) {
+    return BoxDecoration(
+      color: colorScheme.surface,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(
+        color: colorScheme.outlineVariant,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Floating bottom navigation
+  // ---------------------------------------------------------------------------
+
   Widget _buildFloatingBottomNavigationBar(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -341,7 +663,10 @@ class _HomeScreenState extends State<HomeScreen> {
       minimum: const EdgeInsets.fromLTRB(14, 0, 14, 10),
       child: Container(
         height: 76,
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 7,
+          vertical: 7,
+        ),
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: BorderRadius.circular(30),
@@ -352,7 +677,9 @@ class _HomeScreenState extends State<HomeScreen> {
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(
-                alpha: colorScheme.brightness == Brightness.dark ? 0.22 : 0.08,
+                alpha: colorScheme.brightness == Brightness.dark
+                    ? 0.22
+                    : 0.08,
               ),
               blurRadius: 24,
               offset: const Offset(0, 8),
@@ -374,7 +701,6 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'Rides',
             ),
 
-            // Prominent central Start Ride button.
             Expanded(
               child: Center(
                 child: Tooltip(
@@ -384,11 +710,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     shape: const CircleBorder(),
                     child: InkWell(
                       customBorder: const CircleBorder(),
-                      onTap: () {
-                        setState(() {
-                          _selectedIndex = 2;
-                        });
-                      },
+                      onTap: () => _navigateToTab(2),
                       child: const SizedBox(
                         width: 54,
                         height: 54,
@@ -422,7 +744,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Animated icon and label with a subtle background for the active destination.
   Widget _buildFloatingNavItem({
     required BuildContext context,
     required int index,
@@ -441,17 +762,16 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Tooltip(
           message: label,
           child: InkWell(
-            onTap: () {
-              setState(() {
-                _selectedIndex = index;
-              });
-            },
+            onTap: () => _navigateToTab(index),
             borderRadius: BorderRadius.circular(22),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
               margin: const EdgeInsets.symmetric(horizontal: 2),
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 2,
+                vertical: 5,
+              ),
               decoration: BoxDecoration(
                 color: isSelected
                     ? AppColors.primary.withValues(alpha: 0.13)
@@ -496,7 +816,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// Temporary placeholder for destinations we'll implement next.
+// -----------------------------------------------------------------------------
+// Temporary Profile placeholder
+// -----------------------------------------------------------------------------
+
 class _PlaceholderPage extends StatelessWidget {
   const _PlaceholderPage({
     required this.icon,
@@ -519,7 +842,11 @@ class _PlaceholderPage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 64, color: AppColors.primary),
+            Icon(
+              icon,
+              size: 64,
+              color: AppColors.primary,
+            ),
             const SizedBox(height: 20),
             Text(
               title,

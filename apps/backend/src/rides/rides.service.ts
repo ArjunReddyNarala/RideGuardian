@@ -4,12 +4,32 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+
+import {
+  DataSource,
+  IsNull,
+  Repository,
+} from 'typeorm';
+
+import { GuardianRiderRelationship } from '../guardian-relationships/entities/guardian-rider-relationship.entity.js';
+
+import { RideGuardian } from '../ride-guardians/entities/ride-guardian.entity.js';
+
+import { RiderSafetySettings } from '../rider-safety-settings/entities/rider-safety-settings.entity.js';
+
+import { UsersService } from '../users/users.service.js';
+
+import { User } from '../users/entities/user.entity.js';
+
+import { CreateRideDto } from './dto/create-ride.dto.js';
 
 import { RideLocation } from './entities/ride-location.entity.js';
+
 import { Ride } from './entities/ride.entity.js';
-import { UsersService } from '../users/users.service.js';
+
+import { RideTrackingGateway } from './ride-tracking.gateway.js';
 
 @Injectable()
 export class RidesService {
@@ -20,47 +40,219 @@ export class RidesService {
     @InjectRepository(RideLocation)
     private readonly rideLocationRepository: Repository<RideLocation>,
 
+    @InjectRepository(RiderSafetySettings)
+    private readonly safetySettingsRepository: Repository<RiderSafetySettings>,
+
     private readonly usersService: UsersService,
+
+    private readonly dataSource: DataSource,
+
+    private readonly rideTrackingGateway: RideTrackingGateway,
   ) {}
 
-  async createRide(riderId: string): Promise<Ride> {
-    const rider = await this.usersService.getUserById(riderId);
+  /**
+   * Creates a ride and all guardian assignments atomically.
+   */
+  async createRide(
+    riderId: string,
+    dto: CreateRideDto,
+  ) {
+    const guardianIds = dto.guardianIds;
+
+    if (
+      !Array.isArray(guardianIds) ||
+      guardianIds.length === 0
+    ) {
+      throw new ConflictException(
+        'At least one guardian must be selected',
+      );
+    }
+
+    if (new Set(guardianIds).size !== guardianIds.length) {
+      throw new ConflictException(
+        'Duplicate guardian IDs are not allowed',
+      );
+    }
+
+    const rider = await this.usersService.getUserById(
+      riderId,
+    );
 
     if (!rider || !rider.isActive) {
       throw new NotFoundException('Rider not found');
     }
 
-    const activeRide = await this.rideRepository.findOne({
-      where: {
-        riderId,
-        status: 'ACTIVE',
+    await this.validateGuardians(
+      riderId,
+      guardianIds,
+    );
+
+    return this.dataSource.transaction(
+      'READ COMMITTED',
+      async (manager) => {
+        const rideRepository = manager.getRepository(Ride);
+
+        const guardianRepository =
+          manager.getRepository(RideGuardian);
+
+        const relationshipRepository =
+          manager.getRepository(GuardianRiderRelationship);
+
+        const activeRide = await rideRepository.findOne({
+          where: {
+            riderId,
+            status: 'ACTIVE',
+          },
+          lock: {
+            mode: 'pessimistic_write',
+          },
+        });
+
+        if (activeRide) {
+          throw new ConflictException(
+            'Rider already has an active ride',
+          );
+        }
+
+        const guardians = await manager
+          .getRepository(User)
+          .find({
+            where: guardianIds.map((id) => ({
+              id,
+              isActive: true,
+            })),
+          });
+
+        if (guardians.length !== guardianIds.length) {
+          throw new ForbiddenException(
+            'One or more selected guardians do not exist or are inactive',
+          );
+        }
+
+        const relationships =
+          await relationshipRepository.find({
+            where: guardianIds.map((guardianId) => ({
+              guardianId,
+              riderId,
+              status: 'ACCEPTED',
+            })),
+          });
+
+        const acceptedGuardianIds = new Set(
+          relationships.map(
+            (relationship) => relationship.guardianId,
+          ),
+        );
+
+        const invalidGuardianIds = guardianIds.filter(
+          (guardianId) =>
+            !acceptedGuardianIds.has(guardianId),
+        );
+
+        if (invalidGuardianIds.length > 0) {
+          throw new ForbiddenException(
+            'Every selected guardian must have an accepted relationship with this rider',
+          );
+        }
+
+        let ride = rideRepository.create({
+          riderId,
+          rideCode: this.generateRideCode(),
+          status: 'CANCELLED',
+          startedAt: new Date(),
+        });
+
+        ride = await rideRepository.save(ride);
+
+        const assignments = guardianIds.map(
+          (guardianId) =>
+            guardianRepository.create({
+              rideId: ride.id,
+              guardianId,
+              removedAt: null,
+            }),
+        );
+
+        await guardianRepository.save(assignments);
+
+        ride.status = 'ACTIVE';
+
+        ride = await rideRepository.save(ride);
+
+        return {
+          ...ride,
+          guardians: assignments.map((assignment) => ({
+            id: assignment.id,
+            guardianId: assignment.guardianId,
+            addedAt: assignment.addedAt,
+          })),
+        };
       },
+    );
+  }
+
+  private async validateGuardians(
+    riderId: string,
+    guardianIds: string[],
+  ): Promise<void> {
+    const userRepository =
+      this.dataSource.getRepository(User);
+
+    const relationshipRepository =
+      this.dataSource.getRepository(
+        GuardianRiderRelationship,
+      );
+
+    const guardians = await userRepository.find({
+      where: guardianIds.map((id) => ({
+        id,
+        isActive: true,
+      })),
     });
 
-    if (activeRide) {
-      throw new ConflictException(
-        'Rider already has an active ride',
+    if (guardians.length !== guardianIds.length) {
+      throw new ForbiddenException(
+        'One or more selected guardians do not exist or are inactive',
       );
     }
 
-    const ride = this.rideRepository.create({
-      riderId,
-      rideCode: this.generateRideCode(),
-      status: 'ACTIVE',
-      startedAt: new Date(),
-    });
+    if (guardianIds.includes(riderId)) {
+      throw new ForbiddenException(
+        'A rider cannot be their own guardian',
+      );
+    }
 
-    return this.rideRepository.save(ride);
+    const relationships =
+      await relationshipRepository.find({
+        where: guardianIds.map((guardianId) => ({
+          guardianId,
+          riderId,
+          status: 'ACCEPTED',
+        })),
+      });
+
+    const acceptedGuardianIds = new Set(
+      relationships.map(
+        (relationship) => relationship.guardianId,
+      ),
+    );
+
+    if (
+      guardianIds.some(
+        (guardianId) =>
+          !acceptedGuardianIds.has(guardianId),
+      )
+    ) {
+      throw new ForbiddenException(
+        'Every selected guardian must have an accepted relationship with this rider',
+      );
+    }
   }
 
   async getRides(riderId: string): Promise<Ride[]> {
     return this.rideRepository.find({
-      where: {
-        riderId,
-      },
-      order: {
-        startedAt: 'DESC',
-      },
+      where: { riderId },
+      order: { startedAt: 'DESC' },
     });
   }
 
@@ -72,9 +264,56 @@ export class RidesService {
         riderId,
         status: 'ACTIVE',
       },
+      order: { startedAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Returns active rides currently assigned to this guardian.
+   */
+  async getGuardianActiveRides(guardianId: string) {
+    const assignments =
+      await this.dataSource
+        .getRepository(RideGuardian)
+        .find({
+          where: {
+            guardianId,
+            removedAt: IsNull(),
+          },
+          order: {
+            addedAt: 'DESC',
+          },
+        });
+
+    if (assignments.length === 0) {
+      return [];
+    }
+
+    const rides = await this.rideRepository.find({
+      where: assignments.map((assignment) => ({
+        id: assignment.rideId,
+        status: 'ACTIVE',
+      })),
       order: {
         startedAt: 'DESC',
       },
+    });
+
+    const assignmentMap = new Map(
+      assignments.map((assignment) => [
+        assignment.rideId,
+        assignment,
+      ]),
+    );
+
+    return rides.map((ride) => {
+      const assignment = assignmentMap.get(ride.id);
+
+      return {
+        ...ride,
+        guardianAssignmentId: assignment?.id,
+        guardianAddedAt: assignment?.addedAt,
+      };
     });
   }
 
@@ -83,9 +322,7 @@ export class RidesService {
     rideId: string,
   ): Promise<Ride> {
     const ride = await this.rideRepository.findOne({
-      where: {
-        id: rideId,
-      },
+      where: { id: rideId },
     });
 
     if (!ride) {
@@ -99,6 +336,86 @@ export class RidesService {
     }
 
     return ride;
+  }
+
+  /**
+   * Provides the latest location and the authenticated
+   * user's applicable speed-monitoring settings.
+   *
+   * The rider and assigned guardians are authorized.
+   */
+  async getTrackingSnapshot(
+    userId: string,
+    rideId: string,
+  ) {
+    const ride = await this.rideRepository.findOne({
+      where: { id: rideId },
+    });
+
+    if (!ride) {
+      throw new NotFoundException('Ride not found');
+    }
+
+    const isRider = ride.riderId === userId;
+
+    let isGuardian = false;
+
+    if (!isRider) {
+      const assignment =
+        await this.dataSource
+          .getRepository(RideGuardian)
+          .findOne({
+            where: {
+              rideId,
+              guardianId: userId,
+              removedAt: IsNull(),
+            },
+          });
+
+      isGuardian = assignment !== null;
+    }
+
+    if (!isRider && !isGuardian) {
+      throw new ForbiddenException(
+        'You do not have permission to monitor this ride',
+      );
+    }
+
+    const currentLocation =
+      await this.rideLocationRepository.findOne({
+        where: { rideId },
+        order: {
+          recordedAt: 'DESC',
+        },
+      });
+
+    /*
+     * Retrieve settings belonging to this guardian only.
+     * Different guardians can configure different limits
+     * for the same rider.
+     */
+    let settings: RiderSafetySettings | null = null;
+
+    if (isGuardian) {
+      settings =
+        await this.safetySettingsRepository.findOne({
+          where: {
+            guardianId: userId,
+            riderId: ride.riderId,
+          },
+        });
+    }
+
+    return {
+      ride,
+      currentLocation,
+      speedLimitKmh:
+        settings?.maxSpeedKmh != null
+          ? Number(settings.maxSpeedKmh)
+          : null,
+      speedAlertEnabled:
+        settings?.speedAlertEnabled ?? false,
+    };
   }
 
   async endRide(
@@ -119,7 +436,19 @@ export class RidesService {
     ride.status = 'COMPLETED';
     ride.endedAt = new Date();
 
-    return this.rideRepository.save(ride);
+    const savedRide = await this.rideRepository.save(
+      ride,
+    );
+
+    /*
+     * Inform all connected guardians and the rider that
+     * the ride has ended.
+     */
+    this.rideTrackingGateway.broadcastRideEnded(
+      rideId,
+    );
+
+    return savedRide;
   }
 
   async getRideSummary(
@@ -133,12 +462,8 @@ export class RidesService {
 
     const locations =
       await this.rideLocationRepository.find({
-        where: {
-          rideId,
-        },
-        order: {
-          recordedAt: 'ASC',
-        },
+        where: { rideId },
+        order: { recordedAt: 'ASC' },
       });
 
     if (locations.length === 0) {
@@ -202,20 +527,14 @@ export class RidesService {
         ride.startedAt,
         ride.endedAt,
       ),
-      distanceKm: Number(
-        distanceKm.toFixed(2),
-      ),
+      distanceKm: Number(distanceKm.toFixed(2)),
       averageSpeedKmh:
         speedCount > 0
           ? Number(
-              (
-                totalSpeed / speedCount
-              ).toFixed(2),
+              (totalSpeed / speedCount).toFixed(2),
             )
           : 0,
-      maxSpeedKmh: Number(
-        maxSpeedKmh.toFixed(2),
-      ),
+      maxSpeedKmh: Number(maxSpeedKmh.toFixed(2)),
       locationCount: locations.length,
     };
   }
@@ -227,12 +546,8 @@ export class RidesService {
     await this.getRide(riderId, rideId);
 
     return this.rideLocationRepository.find({
-      where: {
-        rideId,
-      },
-      order: {
-        recordedAt: 'ASC',
-      },
+      where: { rideId },
+      order: { recordedAt: 'ASC' },
     });
   }
 
@@ -244,12 +559,8 @@ export class RidesService {
 
     const location =
       await this.rideLocationRepository.findOne({
-        where: {
-          rideId,
-        },
-        order: {
-          recordedAt: 'DESC',
-        },
+        where: { rideId },
+        order: { recordedAt: 'DESC' },
       });
 
     if (!location) {
@@ -277,14 +588,12 @@ export class RidesService {
     startedAt: Date,
     endedAt: Date | null,
   ): number {
-    const endTime =
-      endedAt?.getTime() ?? Date.now();
+    const endTime = endedAt?.getTime() ?? Date.now();
 
     return Math.max(
       0,
       Math.floor(
-        (endTime - startedAt.getTime()) /
-          1000,
+        (endTime - startedAt.getTime()) / 1000,
       ),
     );
   }

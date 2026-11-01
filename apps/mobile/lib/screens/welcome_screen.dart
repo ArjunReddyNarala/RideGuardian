@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../core/network/api_client.dart';
 import '../core/theme/app_colors.dart';
 import '../features/authentication/screens/phone_sign_in_screen.dart';
 import '../features/authentication/services/auth_service.dart';
 import '../features/home/screens/home_screen.dart';
+import '../features/rides/services/rides_api_service.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -263,7 +265,11 @@ class WelcomeScreen extends StatelessWidget {
       if (!context.mounted) return;
 
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+        MaterialPageRoute<void>(
+          builder: (_) => HomeScreen(
+            ridesApiService: RidesApiService(ApiClient()),
+          ),
+        ),
       );
     } catch (error) {
       if (!context.mounted) return;

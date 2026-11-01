@@ -67,19 +67,7 @@ class _PhoneSignInScreenState extends State<PhoneSignInScreen> {
             _errorMessage = message;
           });
         },
-        onAutoVerified: (credential) async {
-          // Firebase can automatically verify a phone number on
-          // supported Android devices. The OTP screen remains the
-          // normal verification path for other cases.
-          try {
-            // Auto-verification is completed through Firebase here.
-            // The authenticated-user navigation will be connected
-            // to the shared post-login flow in the next step.
-            await AuthService.instance.currentUser;
-          } catch (_) {
-            // Do not hide a normal OTP verification option.
-          }
-        },
+        onAutoVerified: (_) {},
         onTimeout: () {},
       );
     } catch (error, stackTrace) {

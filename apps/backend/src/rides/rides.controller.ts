@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   NotFoundException,
@@ -6,10 +7,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
@@ -17,6 +15,7 @@ import { FirebaseAuthGuard } from '../auth/guards/firebase-auth.guard.js';
 import { UsersService } from '../users/users.service.js';
 
 import { RidesService } from './rides.service.js';
+import { CreateRideDto } from './dto/create-ride.dto.js';
 
 @ApiTags('Rides')
 @ApiBearerAuth()
@@ -31,39 +30,58 @@ export class RidesController {
   @Post()
   async createRide(
     @CurrentUser() firebaseUser: DecodedIdToken,
+    @Body() dto: CreateRideDto,
   ) {
-    const rider = await this.getBackendUser(
-      firebaseUser.uid,
-    );
+    const rider = await this.getBackendUser(firebaseUser.uid);
 
-    return this.ridesService.createRide(
-      rider.id,
-    );
+    return this.ridesService.createRide(rider.id, dto);
   }
 
   @Get()
-  async getRides(
-    @CurrentUser() firebaseUser: DecodedIdToken,
-  ) {
-    const rider = await this.getBackendUser(
-      firebaseUser.uid,
-    );
+  async getRides(@CurrentUser() firebaseUser: DecodedIdToken) {
+    const rider = await this.getBackendUser(firebaseUser.uid);
 
-    return this.ridesService.getRides(
-      rider.id,
-    );
+    return this.ridesService.getRides(rider.id);
   }
 
   @Get('active')
-  async getActiveRide(
+  async getActiveRide(@CurrentUser() firebaseUser: DecodedIdToken) {
+    const rider = await this.getBackendUser(firebaseUser.uid);
+
+    return this.ridesService.getActiveRide(rider.id);
+  }
+
+  /**
+   * Returns all currently active rides assigned to the
+   * authenticated guardian.
+   */
+  @Get('monitoring/active')
+  async getGuardianActiveRides(
     @CurrentUser() firebaseUser: DecodedIdToken,
   ) {
-    const rider = await this.getBackendUser(
-      firebaseUser.uid,
-    );
+    const guardian = await this.getBackendUser(firebaseUser.uid);
 
-    return this.ridesService.getActiveRide(
-      rider.id,
+    return this.ridesService.getGuardianActiveRides(
+      guardian.id,
+    );
+  }
+
+  /**
+   * Returns the latest ride location and the authenticated
+   * guardian's speed-monitoring configuration.
+   *
+   * Both the rider and an assigned guardian can access this.
+   */
+  @Get(':rideId/tracking-snapshot')
+  async getTrackingSnapshot(
+    @CurrentUser() firebaseUser: DecodedIdToken,
+    @Param('rideId') rideId: string,
+  ) {
+    const user = await this.getBackendUser(firebaseUser.uid);
+
+    return this.ridesService.getTrackingSnapshot(
+      user.id,
+      rideId,
     );
   }
 
@@ -72,9 +90,7 @@ export class RidesController {
     @CurrentUser() firebaseUser: DecodedIdToken,
     @Param('rideId') rideId: string,
   ) {
-    const rider = await this.getBackendUser(
-      firebaseUser.uid,
-    );
+    const rider = await this.getBackendUser(firebaseUser.uid);
 
     return this.ridesService.getRideSummary(
       rider.id,
@@ -87,9 +103,7 @@ export class RidesController {
     @CurrentUser() firebaseUser: DecodedIdToken,
     @Param('rideId') rideId: string,
   ) {
-    const rider = await this.getBackendUser(
-      firebaseUser.uid,
-    );
+    const rider = await this.getBackendUser(firebaseUser.uid);
 
     return this.ridesService.getRideLocations(
       rider.id,
@@ -102,9 +116,7 @@ export class RidesController {
     @CurrentUser() firebaseUser: DecodedIdToken,
     @Param('rideId') rideId: string,
   ) {
-    const rider = await this.getBackendUser(
-      firebaseUser.uid,
-    );
+    const rider = await this.getBackendUser(firebaseUser.uid);
 
     return this.ridesService.getCurrentLocation(
       rider.id,
@@ -117,9 +129,7 @@ export class RidesController {
     @CurrentUser() firebaseUser: DecodedIdToken,
     @Param('rideId') rideId: string,
   ) {
-    const rider = await this.getBackendUser(
-      firebaseUser.uid,
-    );
+    const rider = await this.getBackendUser(firebaseUser.uid);
 
     return this.ridesService.getRide(
       rider.id,
@@ -132,9 +142,7 @@ export class RidesController {
     @CurrentUser() firebaseUser: DecodedIdToken,
     @Param('rideId') rideId: string,
   ) {
-    const rider = await this.getBackendUser(
-      firebaseUser.uid,
-    );
+    const rider = await this.getBackendUser(firebaseUser.uid);
 
     return this.ridesService.endRide(
       rider.id,
@@ -142,13 +150,10 @@ export class RidesController {
     );
   }
 
-  private async getBackendUser(
-    firebaseUid: string,
-  ) {
-    const user =
-      await this.usersService.getUserByFirebaseUid(
-        firebaseUid,
-      );
+  private async getBackendUser(firebaseUid: string) {
+    const user = await this.usersService.getUserByFirebaseUid(
+      firebaseUid,
+    );
 
     if (!user || !user.isActive) {
       throw new NotFoundException(

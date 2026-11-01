@@ -5,10 +5,10 @@ class ApiUrls {
 
   // Guardian relationships.
   static const String guardianRelationships =
-      '$apiPrefix/guardian-relationships';
+    '$apiPrefix/guardian-relationships';
 
   static String revokeRelationship(String relationshipId) =>
-      '$guardianRelationships/$relationshipId/revoke';
+  '$guardianRelationships/$relationshipId/revoke';
 
   // Invitations.
   static const String invitations = '$apiPrefix/invitations';
@@ -16,14 +16,44 @@ class ApiUrls {
   static String acceptInvitation(String token) => '$invitations/$token/accept';
 
   static String declineInvitation(String token) =>
-      '$invitations/$token/decline';
+  '$invitations/$token/decline';
 
   static String cancelInvitation(String invitationId) =>
-      '$invitations/$invitationId/cancel';
+  '$invitations/$invitationId/cancel';
 
   // Rider safety settings.
   static const String riderSafetySettings = '$apiPrefix/rider-safety-settings';
 
   static String riderSafetySettingsForRider(String riderId) =>
-      '$riderSafetySettings/$riderId';
+  '$riderSafetySettings/$riderId';
+
+  // Rides.
+  static const String rides = '$apiPrefix/rides';
+
+  static const String activeRide = '$rides/active';
+
+  static String rideById(String rideId) => '$rides/$rideId';
+
+  static String endRide(String rideId) => '$rides/$rideId/end';
+
+  static String addRideGuardian(String rideId) =>
+  '$rides/$rideId/guardians';
+
+  static String rideGuardians(String rideId) =>
+  '$rides/$rideId/guardians';
+
+  static String rideLocations(String rideId) =>
+  '$rides/$rideId/locations';
+
+  static String rideCurrentLocation(String rideId) =>
+  '$rides/$rideId/current-location';
+
+  static String rideSummary(String rideId) =>
+  '$rides/$rideId/summary';
+
+  static const String guardianActiveRides =
+    '$rides/monitoring/active';
+
+  static String rideTrackingSnapshot(String rideId) =>
+  '$rides/$rideId/tracking-snapshot';
 }

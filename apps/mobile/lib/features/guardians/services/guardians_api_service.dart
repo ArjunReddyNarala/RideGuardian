@@ -103,10 +103,9 @@ class GuardiansApiService {
     int? speedAlertCooldownSeconds,
   }) async {
     final body = <String, dynamic>{
-      if (maxSpeedKmh != null) 'maxSpeedKmh': maxSpeedKmh,
-      if (speedAlertEnabled != null) 'speedAlertEnabled': speedAlertEnabled,
-      if (speedAlertCooldownSeconds != null)
-        'speedAlertCooldownSeconds': speedAlertCooldownSeconds,
+      'maxSpeedKmh': ?maxSpeedKmh,
+      'speedAlertEnabled': ?speedAlertEnabled,
+      'speedAlertCooldownSeconds': ?speedAlertCooldownSeconds,
     };
 
     await _apiClient.put(
