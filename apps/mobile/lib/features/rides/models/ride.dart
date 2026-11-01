@@ -5,6 +5,7 @@ class Ride {
     required this.riderId,
     required this.status,
     required this.startedAt,
+    this.riderName,
     this.endedAt,
     this.createdAt,
   });
@@ -14,6 +15,7 @@ class Ride {
   final String riderId;
   final String status;
   final DateTime startedAt;
+  final String? riderName;
   final DateTime? endedAt;
   final DateTime? createdAt;
 
@@ -28,6 +30,7 @@ class Ride {
       riderId: _requiredString(json, 'riderId'),
       status: _requiredString(json, 'status'),
       startedAt: _requiredDate(json, 'startedAt'),
+      riderName: json['riderName'] as String?,
       endedAt: _optionalDate(json['endedAt']),
       createdAt: _optionalDate(json['createdAt']),
     );

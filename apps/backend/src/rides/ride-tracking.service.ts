@@ -24,6 +24,11 @@ import { RideLocationDto } from './dto/ride-location.dto.js';
 
 @Injectable()
 export class RideTrackingService {
+  private readonly lastPersistedLocations = new Map<
+    string,
+    Pick<RideLocation, 'latitude' | 'longitude'>
+  >();
+
   constructor(
     @InjectRepository(Ride)
     private readonly rideRepository: Repository<Ride>,
@@ -59,18 +64,22 @@ export class RideTrackingService {
       );
     }
 
-    // Persist the rider's latest location.
-    const location = this.locationRepository.create({
-      rideId,
-      latitude: dto.latitude,
-      longitude: dto.longitude,
-      speedKmh: dto.speedKmh,
-      accuracy: dto.accuracyMeters ?? null,
-      heading: dto.headingDegrees ?? null,
-      recordedAt: new Date(),
-    });
+    // Keep every GPS fix live over WebSocket, but persist a location only
+    // after at least five meters of movement from the last saved point.
+    if (await this.shouldPersistLocation(rideId, dto)) {
+      const location = this.locationRepository.create({
+        rideId,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        speedKmh: dto.speedKmh ?? null,
+        accuracy: dto.accuracyMeters ?? null,
+        heading: dto.headingDegrees ?? null,
+        recordedAt: dto.recordedAt ? new Date(dto.recordedAt) : new Date(),
+      });
 
-    await this.locationRepository.save(location);
+      const savedLocation = await this.locationRepository.save(location);
+      this.lastPersistedLocations.set(rideId, savedLocation);
+    }
 
     // Get all active guardians assigned to this ride.
     const assignments = await this.rideGuardianRepository.find({
@@ -82,7 +91,7 @@ export class RideTrackingService {
 
     const guardianIds = assignments.map((assignment) => assignment.guardianId);
 
-    if (guardianIds.length === 0) {
+    if (guardianIds.length === 0 || dto.speedKmh == null) {
       return { alerts: [] };
     }
 
@@ -151,7 +160,7 @@ export class RideTrackingService {
           safetyAlertId: savedAlert.id,
           type: 'SPEED_LIMIT_EXCEEDED',
           title: 'Speed limit exceeded',
-          body: `Your rider is travelling at ${dto.speedKmh.toFixed(1)} km/h. Configured limit: ${Number(setting.maxSpeedKmh).toFixed(1)} km/h.`,
+          body: `Your rider is travelling at ${dto.speedKmh.toFixed(2)} km/h. Configured limit: ${Number(setting.maxSpeedKmh).toFixed(1)} km/h.`,
         }),
       );
 
@@ -167,5 +176,53 @@ export class RideTrackingService {
     }
 
     return { alerts };
+  }
+
+  private async shouldPersistLocation(
+    rideId: string,
+    dto: RideLocationDto,
+  ): Promise<boolean> {
+    let lastLocation = this.lastPersistedLocations.get(rideId);
+
+    if (!lastLocation) {
+      const latest = await this.locationRepository.findOne({
+        where: { rideId },
+        order: { recordedAt: 'DESC' },
+      });
+
+      if (!latest) return true;
+
+      lastLocation = latest;
+      this.lastPersistedLocations.set(rideId, latest);
+    }
+
+    return (
+      this.distanceBetweenMeters(
+        lastLocation.latitude,
+        lastLocation.longitude,
+        dto.latitude,
+        dto.longitude,
+      ) >= 5
+    );
+  }
+
+  private distanceBetweenMeters(
+    latitudeA: number,
+    longitudeA: number,
+    latitudeB: number,
+    longitudeB: number,
+  ): number {
+    const radians = (degrees: number) => (degrees * Math.PI) / 180;
+    const deltaLatitude = radians(latitudeB - latitudeA);
+    const deltaLongitude = radians(longitudeB - longitudeA);
+    const haversine =
+      Math.sin(deltaLatitude / 2) ** 2 +
+      Math.cos(radians(latitudeA)) *
+        Math.cos(radians(latitudeB)) *
+        Math.sin(deltaLongitude / 2) ** 2;
+
+    return (
+      6_371_000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+    );
   }
 }

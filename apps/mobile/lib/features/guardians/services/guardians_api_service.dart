@@ -21,6 +21,11 @@ class GuardiansApiService {
     return data.map((json) => GuardianRelationship.fromJson(json)).toList();
   }
 
+  Future<int> getGuardianCount() async {
+    final response = await _apiClient.get(ApiUrls.guardians);
+    return _extractList(response).length;
+  }
+
   Future<void> revokeRelationship(String relationshipId) async {
     await _apiClient.patch(ApiUrls.revokeRelationship(relationshipId));
   }

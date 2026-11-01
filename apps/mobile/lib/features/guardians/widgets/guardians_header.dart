@@ -43,19 +43,6 @@ class GuardiansHeader extends StatelessWidget {
             ],
           ),
         ),
-        Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.13),
-            borderRadius: BorderRadius.circular(17),
-          ),
-          child: const Icon(
-            Icons.shield_rounded,
-            color: AppColors.primary,
-            size: 27,
-          ),
-        ),
       ],
     );
   }

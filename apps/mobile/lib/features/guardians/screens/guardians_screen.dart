@@ -23,16 +23,9 @@ import '../widgets/guardians_summary_card.dart';
 
 import '../../rides/screens/active_ride_screen.dart';
 
-enum _GuardiansSection {
-  myGuardians,
-  peopleIMonitor,
-  requests,
-}
+enum _GuardiansSection { myGuardians, peopleIMonitor, requests }
 
-enum _InvitationMode {
-  findGuardian,
-  becomeGuardian,
-}
+enum _InvitationMode { findGuardian, becomeGuardian }
 
 class GuardiansScreen extends StatefulWidget {
   const GuardiansScreen({super.key});
@@ -42,16 +35,16 @@ class GuardiansScreen extends StatefulWidget {
 }
 
 class _GuardiansScreenState extends State<GuardiansScreen> {
-  late final GuardiansApiService _api =
-      GuardiansApiService(ApiClient());
+  late final GuardiansApiService _api = GuardiansApiService(ApiClient());
 
-  late final RidesApiService _ridesApi =
-      RidesApiService(ApiClient());
+  late final RidesApiService _ridesApi = RidesApiService(ApiClient());
 
   _GuardiansSection _section = _GuardiansSection.myGuardians;
 
   bool _isLoading = true;
   bool _isLoadingActiveRides = false;
+  bool _guardianActiveRidesLoaded = false;
+  bool _refreshActiveRidesAfterCurrentLoad = false;
 
   String? _errorMessage;
   String? _activeRidesError;
@@ -63,11 +56,9 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
 
   User? get _currentUser => FirebaseAuth.instance.currentUser;
 
-  String get _currentEmail =>
-      _currentUser?.email?.trim().toLowerCase() ?? '';
+  String get _currentEmail => _currentUser?.email?.trim().toLowerCase() ?? '';
 
-  String get _currentPhone =>
-      _currentUser?.phoneNumber?.trim() ?? '';
+  String get _currentPhone => _currentUser?.phoneNumber?.trim() ?? '';
 
   @override
   void initState() {
@@ -97,14 +88,11 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
       if (!mounted) return;
 
       setState(() {
-        _relationships =
-            results[0] as List<GuardianRelationship>;
+        _relationships = results[0] as List<GuardianRelationship>;
 
-        _invitations =
-            results[1] as List<GuardianInvitation>;
+        _invitations = results[1] as List<GuardianInvitation>;
 
-        _settings =
-            results[2] as List<RiderSafetySettings>;
+        _settings = results[2] as List<RiderSafetySettings>;
 
         _isLoading = false;
       });
@@ -112,10 +100,11 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
       // Load active rides only when the current user has accepted
       // guardian relationships.
       if (_peopleIMonitor.isNotEmpty) {
-        await _loadGuardianActiveRides();
+        await _loadGuardianActiveRides(force: true);
       } else {
         setState(() {
           _guardianActiveRides = [];
+          _guardianActiveRidesLoaded = true;
         });
       }
     } catch (error) {
@@ -128,8 +117,16 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
     }
   }
 
-  Future<void> _loadGuardianActiveRides() async {
+  Future<void> _loadGuardianActiveRides({bool force = false}) async {
     if (!mounted) return;
+    if (_isLoadingActiveRides) {
+      _refreshActiveRidesAfterCurrentLoad =
+          _refreshActiveRidesAfterCurrentLoad || force;
+      return;
+    }
+    if (_guardianActiveRidesLoaded && !force) {
+      return;
+    }
 
     setState(() {
       _isLoadingActiveRides = true;
@@ -149,19 +146,28 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
 
       setState(() {
         _guardianActiveRides = rides.where((ride) {
-          return ride.isActive &&
-              monitoredRiderIds.contains(ride.riderId);
+          return ride.isActive && monitoredRiderIds.contains(ride.riderId);
         }).toList();
 
         _isLoadingActiveRides = false;
+        _guardianActiveRidesLoaded = true;
       });
+      if (_refreshActiveRidesAfterCurrentLoad) {
+        _refreshActiveRidesAfterCurrentLoad = false;
+        await _loadGuardianActiveRides(force: true);
+      }
     } catch (error) {
       if (!mounted) return;
 
       setState(() {
         _isLoadingActiveRides = false;
         _activeRidesError = _errorText(error);
+        _guardianActiveRidesLoaded = true;
       });
+      if (_refreshActiveRidesAfterCurrentLoad) {
+        _refreshActiveRidesAfterCurrentLoad = false;
+        await _loadGuardianActiveRides(force: true);
+      }
     }
   }
 
@@ -206,8 +212,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
       return true;
     }
 
-    if (_currentPhone.isNotEmpty &&
-        user.phone?.trim() == _currentPhone) {
+    if (_currentPhone.isNotEmpty && user.phone?.trim() == _currentPhone) {
       return true;
     }
 
@@ -219,10 +224,8 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
       final email = invitation.inviteeEmail?.trim().toLowerCase();
       final phone = invitation.inviteePhone?.trim();
 
-      return (_currentEmail.isNotEmpty &&
-              email == _currentEmail) ||
-          (_currentPhone.isNotEmpty &&
-              phone == _currentPhone);
+      return (_currentEmail.isNotEmpty && email == _currentEmail) ||
+          (_currentPhone.isNotEmpty && phone == _currentPhone);
     }).toList();
   }
 
@@ -269,7 +272,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
     if (!mounted) return;
 
     // Refresh active ride status after returning from tracking.
-    await _loadGuardianActiveRides();
+    await _loadGuardianActiveRides(force: true);
   }
 
   // ---------------------------------------------------------------------------
@@ -325,9 +328,8 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                           _section = _GuardiansSection.values[index];
                         });
 
-                        if (_section ==
-                                _GuardiansSection.peopleIMonitor &&
-                            _guardianActiveRides.isEmpty &&
+                        if (_section == _GuardiansSection.peopleIMonitor &&
+                            !_guardianActiveRidesLoaded &&
                             !_isLoadingActiveRides) {
                           _loadGuardianActiveRides();
                         }
@@ -337,9 +339,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                     if (_isLoading)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 60),
-                        child: Center(
-                          child: CircularProgressIndicator(),
-                        ),
+                        child: Center(child: CircularProgressIndicator()),
                       )
                     else if (_errorMessage != null)
                       GuardiansErrorState(
@@ -368,8 +368,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
         return _buildRelationshipsList(
           relationships: _myGuardians,
           emptyTitle: 'No guardians yet',
-          emptyDescription:
-              'Invite someone you trust to monitor your rides.',
+          emptyDescription: 'Invite someone you trust to monitor your rides.',
           emptyIcon: Icons.shield_outlined,
           currentUserIsGuardian: false,
         );
@@ -387,100 +386,159 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
       return const GuardiansEmptyState(
         icon: Icons.health_and_safety_outlined,
         title: 'Nobody here yet',
-        description:
-            'Invite a rider to start looking out for them.',
+        description: 'Invite a rider to start looking out for them.',
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_isLoadingActiveRides)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: LinearProgressIndicator(),
-          ),
-
-        if (_activeRidesError != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: TextButton.icon(
-              onPressed: _loadGuardianActiveRides,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry loading active rides'),
-            ),
-          ),
-
         ..._peopleIMonitor.map((relationship) {
           final ride = _activeRideForRider(relationship.riderId);
 
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: Column(
-              children: [
-                _relationshipCard(
-                  relationship: relationship,
-                  currentUserIsGuardian: true,
-                ),
-
-                if (ride != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _openLiveTracking(ride),
-                        icon: const Icon(
-                          Icons.location_on_outlined,
-                        ),
-                        label: const Text('Track Live Ride'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(
-                            Icons.directions_bike_outlined,
-                            size: 19,
-                          ),
-                          SizedBox(width: 9),
-                          Expanded(
-                            child: Text(
-                              'No active ride currently.',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
+            child: _relationshipCard(
+              relationship: relationship,
+              currentUserIsGuardian: true,
+              monitoringStatus: _buildMonitoringStatus(ride),
             ),
           );
         }),
       ],
+    );
+  }
+
+  Widget _buildMonitoringStatus(Ride? ride) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final panelColor = colors.surfaceContainerHighest.withValues(alpha: 0.5);
+
+    if (_isLoadingActiveRides) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: panelColor,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 12),
+            Text('Checking ride status...'),
+          ],
+        ),
+      );
+    }
+
+    if (_activeRidesError != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: panelColor,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.sync_problem_outlined),
+            const SizedBox(width: 10),
+            const Expanded(child: Text('Ride status unavailable')),
+            TextButton(
+              onPressed: () => _loadGuardianActiveRides(force: true),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (ride == null) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: panelColor,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.directions_bike_outlined,
+              color: colors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'No active ride',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Their next ride will appear here.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.radio_button_checked_rounded,
+                color: AppColors.primary,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Ride in progress',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 46,
+            child: ElevatedButton.icon(
+              onPressed: () => _openLiveTracking(ride),
+              icon: const Icon(Icons.location_on_outlined),
+              label: const Text('Track live ride'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -515,6 +573,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
   Widget _relationshipCard({
     required GuardianRelationship relationship,
     required bool currentUserIsGuardian,
+    Widget? monitoringStatus,
   }) {
     final matchingSettings = _settings.where(
       (setting) =>
@@ -522,22 +581,15 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
           setting.riderId == relationship.riderId,
     );
 
-    final setting =
-        matchingSettings.isEmpty ? null : matchingSettings.first;
+    final setting = matchingSettings.isEmpty ? null : matchingSettings.first;
 
     return GuardianRelationshipCard(
       relationship: relationship,
       setting: setting,
       currentUserIsGuardian: currentUserIsGuardian,
-      onConfigure: () => _showSafetySettings(
-        context,
-        relationship,
-        setting,
-      ),
-      onRemove: () => _confirmRevoke(
-        context,
-        relationship,
-      ),
+      onConfigure: () => _showSafetySettings(context, relationship, setting),
+      onRemove: () => _confirmRevoke(context, relationship),
+      monitoringStatus: monitoringStatus,
     );
   }
 
@@ -553,8 +605,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
       return const GuardiansEmptyState(
         icon: Icons.mark_email_unread_outlined,
         title: 'All caught up',
-        description:
-            'Your received and sent invitations will appear here.',
+        description: 'Your received and sent invitations will appear here.',
       );
     }
 
@@ -567,10 +618,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
           ...received.map(
             (invitation) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _invitationCard(
-                invitation,
-                received: true,
-              ),
+              child: _invitationCard(invitation, received: true),
             ),
           ),
           const SizedBox(height: 15),
@@ -581,10 +629,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
           ...sent.map(
             (invitation) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _invitationCard(
-                invitation,
-                received: false,
-              ),
+              child: _invitationCard(invitation, received: false),
             ),
           ),
         ],
@@ -608,9 +653,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
   Widget _sectionHeading(String title) {
     return Text(
       title,
-      style: Theme.of(context)
-          .textTheme
-          .titleMedium
+      style: Theme.of(context).textTheme.titleMedium
           ?.copyWith(fontWeight: FontWeight.w800),
     );
   }
@@ -637,9 +680,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
         useSafeArea: true,
         backgroundColor: Theme.of(context).colorScheme.surface,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(28),
-          ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         builder: (sheetContext) {
           final theme = Theme.of(sheetContext);
@@ -712,15 +753,17 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                       ),
                       const SizedBox(height: 18),
                       TextField(
-                        controller:
-                            usePhone ? phoneController : emailController,
+                        controller: usePhone
+                            ? phoneController
+                            : emailController,
                         keyboardType: usePhone
                             ? TextInputType.phone
                             : TextInputType.emailAddress,
                         textInputAction: TextInputAction.done,
                         decoration: InputDecoration(
-                          labelText:
-                              usePhone ? 'Phone number' : 'Email address',
+                          labelText: usePhone
+                              ? 'Phone number'
+                              : 'Email address',
                           hintText: usePhone
                               ? '+91 98765 43210'
                               : 'name@example.com',
@@ -752,32 +795,27 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                           onPressed: submitting
                               ? null
                               : () async {
-                                  final email =
-                                      emailController.text.trim();
+                                  final email = emailController.text.trim();
 
-                                  final phone =
-                                      phoneController.text.trim();
+                                  final phone = phoneController.text.trim();
 
                                   if (usePhone && phone.isEmpty) {
                                     setSheetState(() {
-                                      formError =
-                                          'Enter a phone number.';
+                                      formError = 'Enter a phone number.';
                                     });
                                     return;
                                   }
 
                                   if (!usePhone && email.isEmpty) {
                                     setSheetState(() {
-                                      formError =
-                                          'Enter an email address.';
+                                      formError = 'Enter an email address.';
                                     });
                                     return;
                                   }
 
                                   if (!usePhone &&
-                                      !RegExp(
-                                        r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-                                      ).hasMatch(email)) {
+                                      !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                                          .hasMatch(email)) {
                                     setSheetState(() {
                                       formError =
                                           'Enter a valid email address.';
@@ -796,8 +834,8 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                                       phone: usePhone ? phone : null,
                                       relationshipType:
                                           mode == _InvitationMode.findGuardian
-                                              ? 'THEY_MONITOR_ME'
-                                              : 'I_MONITOR_THEM',
+                                          ? 'THEY_MONITOR_ME'
+                                          : 'I_MONITOR_THEM',
                                     );
 
                                     if (!context.mounted) return;
@@ -805,8 +843,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                                     Navigator.of(context).pop();
 
                                     _showMessage(
-                                      mode ==
-                                              _InvitationMode.findGuardian
+                                      mode == _InvitationMode.findGuardian
                                           ? 'Guardian invitation sent.'
                                           : 'Invitation sent to the rider.',
                                     );
@@ -824,8 +861,8 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
-                            disabledBackgroundColor:
-                                AppColors.primary.withValues(alpha: 0.5),
+                            disabledBackgroundColor: AppColors.primary
+                                .withValues(alpha: 0.5),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
@@ -857,9 +894,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
         },
       );
     } finally {
-      await Future<void>.delayed(
-        const Duration(milliseconds: 350),
-      );
+      await Future<void>.delayed(const Duration(milliseconds: 350));
 
       emailController.dispose();
       phoneController.dispose();
@@ -893,9 +928,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
         useSafeArea: true,
         backgroundColor: Theme.of(context).colorScheme.surface,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(28),
-          ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         builder: (sheetContext) {
           return StatefulBuilder(
@@ -931,8 +964,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                       const SizedBox(height: 22),
                       TextField(
                         controller: speedController,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
+                        keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         decoration: InputDecoration(
@@ -984,10 +1016,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                             value: 30,
                             child: Text('30 seconds'),
                           ),
-                          DropdownMenuItem(
-                            value: 60,
-                            child: Text('1 minute'),
-                          ),
+                          DropdownMenuItem(value: 60, child: Text('1 minute')),
                           DropdownMenuItem(
                             value: 120,
                             child: Text('2 minutes'),
@@ -1009,9 +1038,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                         const SizedBox(height: 12),
                         Text(
                           error!,
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                          ),
+                          style: const TextStyle(color: Colors.redAccent),
                         ),
                       ],
                       const SizedBox(height: 22),
@@ -1022,8 +1049,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                           onPressed: saving
                               ? null
                               : () async {
-                                  final text =
-                                      speedController.text.trim();
+                                  final text = speedController.text.trim();
 
                                   final double? speed;
 
@@ -1038,8 +1064,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                                           speed <= 0 ||
                                           speed > 999.99)) {
                                     setSheetState(() {
-                                      error =
-                                          'Enter a speed greater than 0 and no more than 999.99 km/h.';
+                                      error = 'Enter a speed greater than 0 and no more than 999.99 km/h.';
                                     });
                                     return;
                                   }
@@ -1061,9 +1086,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
 
                                     Navigator.of(context).pop();
 
-                                    _showMessage(
-                                      'Safety settings updated.',
-                                    );
+                                    _showMessage('Safety settings updated.');
 
                                     await _loadData();
                                   } catch (exception) {
@@ -1093,9 +1116,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
                                 )
                               : const Text(
                                   'Save settings',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
+                                  style: TextStyle(fontWeight: FontWeight.w800),
                                 ),
                         ),
                       ),
@@ -1108,9 +1129,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
         },
       );
     } finally {
-      await Future<void>.delayed(
-        const Duration(milliseconds: 350),
-      );
+      await Future<void>.delayed(const Duration(milliseconds: 350));
 
       speedController.dispose();
     }
@@ -1120,9 +1139,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
   // Invitation and relationship actions
   // ---------------------------------------------------------------------------
 
-  Future<void> _acceptInvitation(
-    GuardianInvitation invitation,
-  ) async {
+  Future<void> _acceptInvitation(GuardianInvitation invitation) async {
     final token = invitation.token;
 
     if (token == null || token.isEmpty) {
@@ -1141,9 +1158,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
     );
   }
 
-  Future<void> _declineInvitation(
-    GuardianInvitation invitation,
-  ) async {
+  Future<void> _declineInvitation(GuardianInvitation invitation) async {
     final token = invitation.token;
 
     if (token == null || token.isEmpty) {
@@ -1162,9 +1177,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
     );
   }
 
-  Future<void> _cancelInvitation(
-    GuardianInvitation invitation,
-  ) async {
+  Future<void> _cancelInvitation(GuardianInvitation invitation) async {
     final confirmed = await _confirm(
       title: 'Cancel invitation?',
       message: 'The pending invitation will be cancelled.',
@@ -1223,9 +1236,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
               },
               child: Text(
                 confirmLabel,
-                style: const TextStyle(
-                  color: Colors.redAccent,
-                ),
+                style: const TextStyle(color: Colors.redAccent),
               ),
             ),
           ],
@@ -1261,10 +1272,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
       );
   }
 }

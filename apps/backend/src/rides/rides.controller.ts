@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -16,6 +17,7 @@ import { UsersService } from '../users/users.service.js';
 
 import { RidesService } from './rides.service.js';
 import { CreateRideDto } from './dto/create-ride.dto.js';
+import { RidePaginationQueryDto } from './dto/ride-pagination-query.dto.js';
 
 @ApiTags('Rides')
 @ApiBearerAuth()
@@ -38,10 +40,26 @@ export class RidesController {
   }
 
   @Get()
-  async getRides(@CurrentUser() firebaseUser: DecodedIdToken) {
+  async getRides(
+    @CurrentUser() firebaseUser: DecodedIdToken,
+    @Query() pagination: RidePaginationQueryDto,
+  ) {
     const rider = await this.getBackendUser(firebaseUser.uid);
 
-    return this.ridesService.getRides(rider.id);
+    return this.ridesService.getRides(
+      rider.id,
+      pagination.page,
+      pagination.limit,
+    );
+  }
+
+  @Get('favorite-guardians')
+  async getFavoriteGuardians(
+    @CurrentUser() firebaseUser: DecodedIdToken,
+  ) {
+    const rider = await this.getBackendUser(firebaseUser.uid);
+
+    return this.ridesService.getFavoriteGuardians(rider.id);
   }
 
   @Get('active')
@@ -63,6 +81,33 @@ export class RidesController {
 
     return this.ridesService.getGuardianActiveRides(
       guardian.id,
+    );
+  }
+
+  @Get('monitoring/summary')
+  async getGuardianRideSummary(
+    @CurrentUser() firebaseUser: DecodedIdToken,
+  ) {
+    const guardian = await this.getBackendUser(firebaseUser.uid);
+
+    return {
+      ridesCovered: await this.ridesService.getGuardianRidesCoveredCount(
+        guardian.id,
+      ),
+    };
+  }
+
+  @Get('monitoring/history')
+  async getGuardianRideHistory(
+    @CurrentUser() firebaseUser: DecodedIdToken,
+    @Query() pagination: RidePaginationQueryDto,
+  ) {
+    const guardian = await this.getBackendUser(firebaseUser.uid);
+
+    return this.ridesService.getGuardianRideHistory(
+      guardian.id,
+      pagination.page,
+      pagination.limit,
     );
   }
 

@@ -90,20 +90,48 @@ class GuardianInvitationCard extends StatelessWidget {
               children: [
                 if (received) ...[
                   Expanded(
-                    child: OutlinedButton(
+                    child: OutlinedButton.icon(
                       onPressed: onDecline,
-                      child: const Text('Decline'),
+                      icon: const Icon(Icons.close_rounded, size: 19),
+                      label: const Text('Decline'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.danger,
+                        backgroundColor: AppColors.danger.withValues(
+                          alpha: 0.08,
+                        ),
+                        side: BorderSide(
+                          color: AppColors.danger.withValues(alpha: 0.38),
+                        ),
+                        minimumSize: const Size(0, 52),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 9),
                   Expanded(
-                    child: ElevatedButton(
+                    child: OutlinedButton.icon(
                       onPressed: onAccept,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
+                      icon: const Icon(Icons.check_rounded, size: 19),
+                      label: const Text('Accept'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        backgroundColor: AppColors.primary.withValues(
+                          alpha: 0.10,
+                        ),
+                        side: BorderSide(
+                          color: AppColors.primary.withValues(alpha: 0.38),
+                        ),
+                        minimumSize: const Size(0, 52),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
-                      child: const Text('Accept'),
                     ),
                   ),
                 ] else ...[

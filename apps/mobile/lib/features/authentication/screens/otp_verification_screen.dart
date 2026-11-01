@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../home/screens/home_screen.dart';
+import '../../rides/services/rides_api_service.dart';
 import '../services/auth_service.dart';
+import '../widgets/auth_action_button.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   const OtpVerificationScreen({
@@ -51,14 +55,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
       if (!mounted) return;
 
-      // Firebase authentication succeeded. The next phase will
-      // check/register the backend profile before routing to the
-      // authenticated application.
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Phone number verified successfully.')),
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              HomeScreen(ridesApiService: RidesApiService(ApiClient())),
+        ),
+        (_) => false,
       );
-
-      Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (error) {
       if (!mounted) return;
 
@@ -168,18 +171,16 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                   ),
                 ],
                 const SizedBox(height: 28),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _verifyOtp,
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Verify and continue'),
+                AuthActionButton(
+                  label: 'Verify and continue',
+                  loadingLabel: 'Verifying code…',
+                  leading: Icon(
+                    Icons.verified_user_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
+                  trailingIcon: Icons.check_rounded,
+                  isLoading: _isLoading,
+                  onPressed: _verifyOtp,
                 ),
                 const SizedBox(height: 20),
                 Text(

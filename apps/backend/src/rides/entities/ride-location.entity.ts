@@ -1,9 +1,4 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('ride_locations')
 export class RideLocation {
@@ -44,9 +39,10 @@ export class RideLocation {
   })
   altitude: number | null;
 
-  @CreateDateColumn({
+  @Column({
     name: 'recorded_at',
     type: 'timestamptz',
   })
   recordedAt: Date;
+
 }

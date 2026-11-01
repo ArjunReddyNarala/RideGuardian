@@ -14,26 +14,30 @@ class GuardiansInviteActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _InviteActionCard(
-            title: 'Find a Guardian',
-            subtitle: 'Someone watches over you',
-            icon: Icons.shield_outlined,
-            onTap: onFindGuardian,
+    return SizedBox(
+      height: 176,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _InviteActionCard(
+              title: 'Find a Guardian',
+              subtitle: 'Someone watches over you',
+              icon: Icons.shield_outlined,
+              onTap: onFindGuardian,
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _InviteActionCard(
-            title: 'Become a Guardian',
-            subtitle: 'Watch over a rider',
-            icon: Icons.health_and_safety_outlined,
-            onTap: onBecomeGuardian,
+          const SizedBox(width: 12),
+          Expanded(
+            child: _InviteActionCard(
+              title: 'Become a Guardian',
+              subtitle: 'Watch over a rider',
+              icon: Icons.health_and_safety_outlined,
+              onTap: onBecomeGuardian,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

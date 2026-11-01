@@ -16,10 +16,7 @@ import { UsersService } from '../users/users.service.js';
 
 import { InjectRepository } from '@nestjs/typeorm';
 
-import {
-  IsNull,
-  Repository,
-} from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 
 import { Ride } from './entities/ride.entity.js';
 import { RideGuardian } from '../ride-guardians/entities/ride-guardian.entity.js';
@@ -33,15 +30,12 @@ interface ConnectedClient {
   userId: string;
   rideId: string;
   role: 'RIDER' | 'GUARDIAN';
+  locationProcessing: Promise<void>;
 }
 
 @Injectable()
-export class RideTrackingGateway
-  implements OnModuleInit, OnModuleDestroy
-{
-  private readonly logger = new Logger(
-    RideTrackingGateway.name,
-  );
+export class RideTrackingGateway implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(RideTrackingGateway.name);
 
   private server: WebSocketServer;
 
@@ -64,8 +58,7 @@ export class RideTrackingGateway
   ) {}
 
   onModuleInit() {
-    const httpServer =
-      this.httpAdapterHost.httpAdapter.getHttpServer();
+    const httpServer = this.httpAdapterHost.httpAdapter.getHttpServer();
 
     this.server = new WebSocketServer({
       server: httpServer,
@@ -92,10 +85,7 @@ export class RideTrackingGateway
     request: import('node:http').IncomingMessage,
   ) {
     try {
-      const requestUrl = new URL(
-        request.url ?? '/',
-        'http://localhost',
-      );
+      const requestUrl = new URL(request.url ?? '/', 'http://localhost');
 
       const token = requestUrl.searchParams.get('token');
 
@@ -106,13 +96,11 @@ export class RideTrackingGateway
         return;
       }
 
-      const decodedToken =
-        await this.authService.verifyIdToken(token);
+      const decodedToken = await this.authService.verifyIdToken(token);
 
-      const user =
-        await this.usersService.getUserByFirebaseUid(
-          decodedToken.uid,
-        );
+      const user = await this.usersService.getUserByFirebaseUid(
+        decodedToken.uid,
+      );
 
       if (!user || !user.isActive) {
         socket.close(1008, 'User is not active');
@@ -136,14 +124,13 @@ export class RideTrackingGateway
       if (ride.riderId === user.id) {
         role = 'RIDER';
       } else {
-        const assignment =
-          await this.rideGuardianRepository.findOne({
-            where: {
-              rideId,
-              guardianId: user.id,
-              removedAt: IsNull(),
-            },
-          });
+        const assignment = await this.rideGuardianRepository.findOne({
+          where: {
+            rideId,
+            guardianId: user.id,
+            removedAt: IsNull(),
+          },
+        });
 
         if (!assignment) {
           socket.close(1008, 'Not authorized for this ride');
@@ -158,6 +145,7 @@ export class RideTrackingGateway
         userId: user.id,
         rideId,
         role,
+        locationProcessing: Promise.resolve(),
       };
 
       this.clients.add(client);
@@ -170,9 +158,7 @@ export class RideTrackingGateway
         },
       });
 
-      this.logger.log(
-        `User connected to ride ${rideId} as ${role}`,
-      );
+      this.logger.log(`User connected to ride ${rideId} as ${role}`);
 
       socket.on('message', (rawMessage) => {
         void this.handleMessage(client, rawMessage.toString());
@@ -183,9 +169,7 @@ export class RideTrackingGateway
       });
 
       socket.on('error', (error) => {
-        this.logger.error(
-          `WebSocket error: ${error.message}`,
-        );
+        this.logger.error(`WebSocket error: ${error.message}`);
 
         this.clients.delete(client);
       });
@@ -198,10 +182,7 @@ export class RideTrackingGateway
     }
   }
 
-  private async handleMessage(
-    client: ConnectedClient,
-    rawMessage: string,
-  ) {
+  private handleMessage(client: ConnectedClient, rawMessage: string) {
     try {
       const message = JSON.parse(rawMessage);
 
@@ -214,10 +195,7 @@ export class RideTrackingGateway
       }
 
       if (message.type !== 'LOCATION_UPDATE') {
-        this.sendError(
-          client.socket,
-          'Unsupported event type',
-        );
+        this.sendError(client.socket, 'Unsupported event type');
 
         return;
       }
@@ -233,23 +211,19 @@ export class RideTrackingGateway
 
       const dto = this.validateLocation(message.data);
 
-      const result =
-        await this.rideTrackingService.processLocation(
-          client.userId,
-          client.rideId,
-          dto,
-        );
-
+      // Deliver the GPS fix to rider and guardians immediately. Database writes
+      // and speed-alert work can take much longer than the websocket hop.
       this.broadcast(client.rideId, {
         type: 'LOCATION_UPDATE',
         data: {
           rideId: client.rideId,
           latitude: dto.latitude,
           longitude: dto.longitude,
-          speedKmh: dto.speedKmh,
+          speedKmh: dto.speedKmh ?? null,
+          speedAccuracyKmh: dto.speedAccuracyKmh ?? null,
           accuracyMeters: dto.accuracyMeters ?? null,
           headingDegrees: dto.headingDegrees ?? null,
-          recordedAt: new Date().toISOString(),
+          recordedAt: dto.recordedAt ?? new Date().toISOString(),
         },
       });
 
@@ -260,12 +234,28 @@ export class RideTrackingGateway
         },
       });
 
-      for (const alert of result.alerts) {
-        this.broadcast(client.rideId, {
-          type: 'SPEED_LIMIT_EXCEEDED',
-          data: alert,
+      // Preserve fix order in storage while keeping the websocket delivery
+      // path independent from database and notification latency.
+      client.locationProcessing = client.locationProcessing
+        .then(async () => {
+          const result = await this.rideTrackingService.processLocation(
+            client.userId,
+            client.rideId,
+            dto,
+          );
+
+          for (const alert of result.alerts) {
+            this.broadcast(client.rideId, {
+              type: 'SPEED_LIMIT_EXCEEDED',
+              data: alert,
+            });
+          }
+        })
+        .catch((error: unknown) => {
+          this.logger.error(
+            `Location persistence failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          );
         });
-      }
     } catch (error) {
       this.logger.error(
         `Location processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -273,9 +263,7 @@ export class RideTrackingGateway
 
       this.sendError(
         client.socket,
-        error instanceof Error
-          ? error.message
-          : 'Unable to process location',
+        error instanceof Error ? error.message : 'Unable to process location',
       );
     }
   }
@@ -289,41 +277,49 @@ export class RideTrackingGateway
 
     const latitude = Number(value.latitude);
     const longitude = Number(value.longitude);
-    const speedKmh = Number(value.speedKmh);
+    const speedKmh = value.speedKmh == null ? null : Number(value.speedKmh);
 
-    if (
-      !Number.isFinite(latitude) ||
-      latitude < -90 ||
-      latitude > 90
-    ) {
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
       throw new Error('Invalid latitude');
     }
 
-    if (
-      !Number.isFinite(longitude) ||
-      longitude < -180 ||
-      longitude > 180
-    ) {
+    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
       throw new Error('Invalid longitude');
     }
 
     if (
-      !Number.isFinite(speedKmh) ||
-      speedKmh < 0 ||
-      speedKmh > 350
+      speedKmh !== null &&
+      (!Number.isFinite(speedKmh) || speedKmh < 0 || speedKmh > 350)
     ) {
       throw new Error('Invalid speed');
     }
 
     const accuracyMeters =
-      value.accuracyMeters == null
-        ? undefined
-        : Number(value.accuracyMeters);
+      value.accuracyMeters == null ? undefined : Number(value.accuracyMeters);
 
     const headingDegrees =
-      value.headingDegrees == null
+      value.headingDegrees == null ? undefined : Number(value.headingDegrees);
+
+    const speedAccuracyKmh =
+      value.speedAccuracyKmh == null
         ? undefined
-        : Number(value.headingDegrees);
+        : Number(value.speedAccuracyKmh);
+
+    const recordedAt =
+      value.recordedAt == null ? undefined : String(value.recordedAt);
+
+    if (
+      speedAccuracyKmh !== undefined &&
+      (!Number.isFinite(speedAccuracyKmh) ||
+        speedAccuracyKmh < 0 ||
+        speedAccuracyKmh > 350)
+    ) {
+      throw new Error('Invalid speed accuracy');
+    }
+
+    if (recordedAt !== undefined && !Number.isFinite(Date.parse(recordedAt))) {
+      throw new Error('Invalid location timestamp');
+    }
 
     if (
       accuracyMeters !== undefined &&
@@ -345,8 +341,10 @@ export class RideTrackingGateway
       latitude,
       longitude,
       speedKmh,
+      speedAccuracyKmh,
       accuracyMeters,
       headingDegrees,
+      recordedAt,
     };
   }
 

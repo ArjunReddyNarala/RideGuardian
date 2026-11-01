@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/pulsing_location_marker.dart';
 
 class LiveMapCard extends StatefulWidget {
   const LiveMapCard({super.key});
@@ -18,6 +19,7 @@ class LiveMapCard extends StatefulWidget {
 class _LiveMapCardState extends State<LiveMapCard> {
   GoogleMapController? _mapController;
   StreamSubscription<Position>? _positionSubscription;
+  BitmapDescriptor? _locationMarkerIcon;
 
   Position? _currentPosition;
 
@@ -30,7 +32,19 @@ class _LiveMapCardState extends State<LiveMapCard> {
   @override
   void initState() {
     super.initState();
+    _createLocationMarkerIcon();
     _initializeLocation();
+  }
+
+  Future<void> _createLocationMarkerIcon() async {
+    try {
+      final markerIcon = await LiveLocationMarker.createIcon();
+      if (!mounted) return;
+
+      setState(() => _locationMarkerIcon = markerIcon);
+    } catch (error) {
+      debugPrint('RideGuardian marker rendering error: $error');
+    }
   }
 
   Future<void> _initializeLocation() async {
@@ -230,63 +244,75 @@ class _LiveMapCardState extends State<LiveMapCard> {
           width: double.infinity,
           child: Stack(
             children: [
-              GoogleMap(
-                initialCameraPosition: CameraPosition(
-                  target: initialTarget,
-                  zoom: 15,
-                ),
-                onMapCreated: _onMapCreated,
-
-                // Keep Google Maps gestures enabled.
-                scrollGesturesEnabled: true,
-                zoomGesturesEnabled: true,
-                rotateGesturesEnabled: true,
-                tiltGesturesEnabled: true,
-
-                myLocationEnabled: false,
-                myLocationButtonEnabled: false,
-                zoomControlsEnabled: false,
-                compassEnabled: true,
-                mapToolbarEnabled: false,
-                buildingsEnabled: true,
-                trafficEnabled: false,
-
-                // Give map gestures priority over the parent scroll view.
-                gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                  Factory<OneSequenceGestureRecognizer>(
-                    () => EagerGestureRecognizer(),
+              PulsingLocationLayer(
+                position: currentPosition == null
+                    ? null
+                    : LatLng(
+                        currentPosition.latitude,
+                        currentPosition.longitude,
+                      ),
+                accuracyMeters: currentPosition?.hasAccuracy == true
+                    ? currentPosition!.accuracy
+                    : null,
+                builder: (context, pulseCircles) => GoogleMap(
+                  initialCameraPosition: CameraPosition(
+                    target: initialTarget,
+                    zoom: 15,
                   ),
-                },
+                  onMapCreated: _onMapCreated,
 
-                onCameraMoveStarted: () {
-                  if (_isFollowingLocation && mounted) {
-                    setState(() {
-                      _isFollowingLocation = false;
-                    });
-                  }
-                },
+                  // Keep Google Maps gestures enabled.
+                  scrollGesturesEnabled: true,
+                  zoomGesturesEnabled: true,
+                  rotateGesturesEnabled: true,
+                  tiltGesturesEnabled: true,
 
-                // Use the normal Google Maps appearance.
-                style: null,
+                  myLocationEnabled: false,
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: false,
+                  compassEnabled: true,
+                  mapToolbarEnabled: false,
+                  buildingsEnabled: true,
+                  trafficEnabled: false,
 
-                markers: currentPosition == null
-                    ? <Marker>{}
-                    : <Marker>{
-                        Marker(
-                          markerId: const MarkerId('rider_location'),
-                          position: LatLng(
-                            currentPosition.latitude,
-                            currentPosition.longitude,
+                  // Give map gestures priority over the parent scroll view.
+                  gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                    Factory<OneSequenceGestureRecognizer>(
+                      () => EagerGestureRecognizer(),
+                    ),
+                  },
+
+                  onCameraMoveStarted: () {
+                    if (_isFollowingLocation && mounted) {
+                      setState(() {
+                        _isFollowingLocation = false;
+                      });
+                    }
+                  },
+
+                  // Use the normal Google Maps appearance.
+                  style: null,
+
+                  circles: pulseCircles,
+                  markers:
+                      currentPosition == null || _locationMarkerIcon == null
+                      ? <Marker>{}
+                      : <Marker>{
+                          Marker(
+                            markerId: const MarkerId('rider_location'),
+                            position: LatLng(
+                              currentPosition.latitude,
+                              currentPosition.longitude,
+                            ),
+                            anchor: const Offset(0.5, 0.5),
+                            icon: _locationMarkerIcon!,
+                            infoWindow: const InfoWindow(
+                              title: 'Your location',
+                              snippet: 'RideGuardian live tracking',
+                            ),
                           ),
-                          icon: BitmapDescriptor.defaultMarkerWithHue(
-                            BitmapDescriptor.hueGreen,
-                          ),
-                          infoWindow: const InfoWindow(
-                            title: 'Your location',
-                            snippet: 'RideGuardian live tracking',
-                          ),
-                        ),
-                      },
+                        },
+                ),
               ),
 
               // Location loading state.

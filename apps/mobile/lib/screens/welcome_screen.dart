@@ -4,6 +4,7 @@ import '../core/network/api_client.dart';
 import '../core/theme/app_colors.dart';
 import '../features/authentication/screens/phone_sign_in_screen.dart';
 import '../features/authentication/services/auth_service.dart';
+import '../features/authentication/widgets/auth_action_button.dart';
 import '../features/home/screens/home_screen.dart';
 import '../features/rides/services/rides_api_service.dart';
 
@@ -117,97 +118,39 @@ class WelcomeScreen extends StatelessWidget {
                       const Spacer(flex: 2),
 
                       // Google sign-in button.
-                      SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: OutlinedButton(
-                          onPressed: () => _signInWithGoogle(context),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            side: BorderSide(
-                              color: colorScheme.outlineVariant,
-                              width: 1.2,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Image.asset(
-                                googleLogoAsset,
-                                width: 30,
-                                height: 30,
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Icon(
-                                    Icons.g_mobiledata_rounded,
-                                    size: 30,
-                                    color: colorScheme.onSurface,
-                                  );
-                                },
-                              ),
-                              const SizedBox(width: 12),
-                              Flexible(
-                                child: Text(
-                                  'Continue with Google',
-                                  style: textTheme.titleMedium?.copyWith(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: colorScheme.onSurface,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
+                      AuthActionButton(
+                        label: 'Continue with Google',
+                        leading: Image.asset(
+                          googleLogoAsset,
+                          width: 25,
+                          height: 25,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => Icon(
+                            Icons.g_mobiledata_rounded,
+                            size: 28,
+                            color: colorScheme.onSurface,
                           ),
                         ),
+                        onPressed: () => _signInWithGoogle(context),
                       ),
 
                       const SizedBox(height: 14),
 
                       // Phone sign-in button.
-                      SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const PhoneSignInScreen(),
-                              ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.phone_iphone_rounded,
-                                size: 21,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 12),
-                              Flexible(
-                                child: Text(
-                                  'Continue with Phone Number',
-                                  style: textTheme.titleMedium?.copyWith(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
+                      AuthActionButton(
+                        label: 'Continue with Phone Number',
+                        leading: Icon(
+                          Icons.phone_iphone_rounded,
+                          size: 22,
+                          color: colorScheme.primary,
                         ),
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const PhoneSignInScreen(),
+                            ),
+                          );
+                        },
                       ),
 
                       // Space between buttons and legal text.
@@ -266,9 +209,8 @@ class WelcomeScreen extends StatelessWidget {
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => HomeScreen(
-            ridesApiService: RidesApiService(ApiClient()),
-          ),
+          builder: (_) =>
+              HomeScreen(ridesApiService: RidesApiService(ApiClient())),
         ),
       );
     } catch (error) {

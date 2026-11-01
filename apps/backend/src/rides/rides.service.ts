@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 
 import {
   DataSource,
+  In,
   IsNull,
   Repository,
 } from 'typeorm';
@@ -249,11 +250,99 @@ export class RidesService {
     }
   }
 
-  async getRides(riderId: string): Promise<Ride[]> {
-    return this.rideRepository.find({
+  async getRides(riderId: string, page = 1, limit = 20) {
+    const [rides, total] = await this.rideRepository.findAndCount({
       where: { riderId },
-      order: { startedAt: 'DESC' },
+      order: { startedAt: 'DESC', id: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
+
+    return this.paginatedRides(rides, page, limit, total);
+  }
+
+  async getFavoriteGuardians(riderId: string) {
+    const rows = await this.dataSource.query(
+      `WITH recent_rides AS (
+         SELECT id, started_at
+         FROM rides
+         WHERE rider_id = $1
+         ORDER BY started_at DESC, id DESC
+         LIMIT 10
+       )
+       SELECT
+         guardian.id AS id,
+         guardian.name AS name,
+         guardian.profile_image_url AS "profileImageUrl",
+         COUNT(DISTINCT recent.id)::int AS "ridesSelected",
+         MAX(recent.started_at) AS "lastSelectedAt"
+       FROM recent_rides recent
+       INNER JOIN ride_guardians assignment
+         ON assignment.ride_id = recent.id
+       INNER JOIN guardian_rider_relationships relationship
+         ON relationship.guardian_id = assignment.guardian_id
+         AND relationship.rider_id = $1
+         AND relationship.status = 'ACCEPTED'
+       INNER JOIN users guardian
+         ON guardian.id = assignment.guardian_id
+         AND guardian.is_active = TRUE
+       GROUP BY guardian.id, guardian.name, guardian.profile_image_url
+       ORDER BY COUNT(DISTINCT recent.id) DESC,
+         MAX(recent.started_at) DESC,
+         guardian.name ASC
+       LIMIT 2`,
+      [riderId],
+    ) as Array<{
+      id: string;
+      name: string;
+      profileImageUrl: string | null;
+      ridesSelected: number;
+      lastSelectedAt: Date | string;
+    }>;
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      profileImageUrl: row.profileImageUrl,
+      ridesSelected: Number(row.ridesSelected),
+      lastSelectedAt: row.lastSelectedAt,
+    }));
+  }
+
+  async getGuardianRideHistory(
+    guardianId: string,
+    page = 1,
+    limit = 20,
+  ) {
+    const [rides, total] = await this.rideRepository
+      .createQueryBuilder('ride')
+      .innerJoin(
+        RideGuardian,
+        'assignment',
+        'assignment.ride_id = ride.id',
+      )
+      .where('assignment.guardian_id = :guardianId', { guardianId })
+      .andWhere('ride.rider_id <> :guardianId', { guardianId })
+      .orderBy('ride.started_at', 'DESC')
+      .addOrderBy('ride.id', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const riderIds = [...new Set(rides.map((ride) => ride.riderId))];
+    const riders = riderIds.length === 0
+      ? []
+      : await this.dataSource.getRepository(User).find({
+          where: { id: In(riderIds) },
+          select: { id: true, name: true },
+        });
+    const riderNames = new Map(riders.map((rider) => [rider.id, rider.name]));
+    const data = rides.map((ride) => ({
+      ...ride,
+      riderName: riderNames.get(ride.riderId) ?? 'Ride participant',
+    }));
+
+    return this.paginatedRides(data, page, limit, total);
   }
 
   async getActiveRide(
@@ -315,6 +404,29 @@ export class RidesService {
         guardianAddedAt: assignment?.addedAt,
       };
     });
+  }
+
+  async getGuardianRidesCoveredCount(guardianId: string): Promise<number> {
+    return this.dataSource.getRepository(RideGuardian).count({
+      where: { guardianId },
+    });
+  }
+
+  private paginatedRides<T>(
+    data: T[],
+    page: number,
+    limit: number,
+    total: number,
+  ) {
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async getRide(

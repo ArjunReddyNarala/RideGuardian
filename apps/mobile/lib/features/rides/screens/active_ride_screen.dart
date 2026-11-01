@@ -1,16 +1,22 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/config/env_config.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/india_time.dart';
+import '../../../core/widgets/pulsing_location_marker.dart';
 import '../../../websocket/websocket_events.dart';
 
 import '../models/ride.dart';
+import '../models/gps_speed_reading.dart';
 import '../services/ride_location_service.dart';
 import '../services/rides_api_service.dart';
+import '../widgets/speedometer_gauge.dart';
 
 class ActiveRideScreen extends StatefulWidget {
   const ActiveRideScreen({
@@ -32,10 +38,10 @@ class ActiveRideScreen extends StatefulWidget {
 }
 
 class _ActiveRideScreenState extends State<ActiveRideScreen> {
-  final RideLocationService _locationService =
-      RideLocationService.instance;
+  final RideLocationService _locationService = RideLocationService.instance;
 
   GoogleMapController? _mapController;
+  BitmapDescriptor? _locationMarkerIcon;
 
   StreamSubscription<Position>? _positionSubscription;
   StreamSubscription<WebSocketMessage>? _messageSubscription;
@@ -43,16 +49,21 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   Timer? _durationTimer;
 
   LatLng? _currentLocation;
+  LatLng? _lastDistanceLocation;
+  DateTime? _lastDistancePositionTime;
 
   double _distanceKm = 0;
   double _maxSpeed = 0;
   double _currentSpeed = 0;
+  double? _locationAccuracyMeters;
+  bool _hasSpeedReading = false;
 
   double? _speedLimit;
 
   Duration _duration = Duration.zero;
 
   DateTime? _lastPositionTime;
+  DateTime? _lastPositionReceivedAt;
 
   bool _isLoading = true;
   bool _isTracking = false;
@@ -66,6 +77,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
 
   static const double _minimumMovementMeters = 3;
   static const double _maximumAccuracyMeters = 50;
+  static const Duration _speedFixStaleAfter = Duration(seconds: 5);
 
   bool get _isRider => !widget.isGuardian;
 
@@ -75,7 +87,19 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
 
     _duration = DateTime.now().difference(widget.ride.startedAt);
 
+    _loadLocationMarkerIcon();
     _startRideTracking();
+  }
+
+  Future<void> _loadLocationMarkerIcon() async {
+    try {
+      final markerIcon = await LiveLocationMarker.createIcon();
+      if (!mounted || _isDisposed) return;
+
+      setState(() => _locationMarkerIcon = markerIcon);
+    } catch (error) {
+      debugPrint('RideGuardian marker rendering error: $error');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -123,8 +147,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   Future<void> _startRiderTracking() async {
     // The service is shared. If tracking is already active, do not start
     // another GPS stream or another WebSocket connection.
-    if (!_locationService.isTracking ||
-        !_locationService.isConnected) {
+    if (!_locationService.isTracking || !_locationService.isConnected) {
       await _locationService.startTracking(
         rideId: widget.ride.id,
         backendBaseUrl: EnvConfig.backendBaseUrl,
@@ -178,24 +201,46 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   }
 
   void _applyTrackingSnapshot(Map<String, dynamic> snapshot) {
-    final location = snapshot['currentLocation'] ??
+    final location =
+        snapshot['currentLocation'] ??
         snapshot['location'] ??
         snapshot['latestLocation'];
 
     if (location is Map) {
       final latitude = _toDouble(location['latitude']);
       final longitude = _toDouble(location['longitude']);
+      final recordedAt = DateTime.tryParse(
+        location['recordedAt']?.toString() ?? '',
+      );
+      final accuracyMeters = _toDouble(location['accuracy']);
+      final isFresh = _isFreshPositionTime(recordedAt);
 
-      if (latitude != null && longitude != null) {
+      if (isFresh && latitude != null && longitude != null) {
         _currentLocation = LatLng(latitude, longitude);
+        _distanceDeltaForFix(_currentLocation!, accuracyMeters, recordedAt);
+      } else {
+        _currentLocation = null;
+        _lastDistanceLocation = null;
+        _lastDistancePositionTime = null;
       }
 
-      final speed = _toDouble(location['speedKmh']);
+      final speedReading = isFresh
+          ? GpsSpeedReading.fromValues(
+              speedKmh: _toDouble(location['speedKmh']),
+              accuracyKmh: _toDouble(location['speedAccuracyKmh']),
+            )
+          : GpsSpeedReading.fromValues(speedKmh: null);
+      _locationAccuracyMeters = isFresh ? accuracyMeters : null;
+      _lastPositionTime = recordedAt;
+      _lastPositionReceivedAt = isFresh ? DateTime.now() : null;
 
-      if (speed != null) {
-        _currentSpeed = speed;
-        _maxSpeed = speed;
+      if (speedReading.speedKmh != null) {
+        _currentSpeed = speedReading.speedKmh!;
+        _maxSpeed = _currentSpeed;
+        _hasSpeedReading = true;
       }
+
+      _hasSpeedReading = speedReading.speedKmh != null;
     }
 
     _speedLimit = _toDouble(snapshot['speedLimitKmh']);
@@ -218,18 +263,20 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   void _startDurationTimer() {
     _durationTimer?.cancel();
 
-    _durationTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) {
-        if (!mounted || _isDisposed) return;
+    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || _isDisposed) return;
 
-        setState(() {
-          _duration = DateTime.now().difference(
-            widget.ride.startedAt,
-          );
-        });
-      },
-    );
+      setState(() {
+        _duration = DateTime.now().difference(widget.ride.startedAt);
+
+        if (!_hasRecentPosition) {
+          // Do not present an old GPS fix as current when updates stop.
+          _currentSpeed = 0;
+          _hasSpeedReading = false;
+          _locationAccuracyMeters = null;
+        }
+      });
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -239,43 +286,35 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   void _handlePosition(Position position) {
     if (!mounted || _isDisposed) return;
 
-    if (position.accuracy > _maximumAccuracyMeters) {
+    if (_lastPositionTime != null &&
+        position.timestamp.isBefore(_lastPositionTime!)) {
       return;
     }
 
-    final newLocation = LatLng(
-      position.latitude,
-      position.longitude,
+    final newLocation = LatLng(position.latitude, position.longitude);
+    final distanceDeltaKm = _distanceDeltaForFix(
+      newLocation,
+      position.hasAccuracy ? position.accuracy : null,
+      position.timestamp,
     );
 
-    if (_currentLocation != null) {
-      final distanceMeters = Geolocator.distanceBetween(
-        _currentLocation!.latitude,
-        _currentLocation!.longitude,
-        newLocation.latitude,
-        newLocation.longitude,
-      );
-
-      if (distanceMeters < _minimumMovementMeters) {
-        return;
-      }
-
-      _distanceKm += distanceMeters / 1000;
-    }
-
-    final speed = position.speed.isFinite
-        ? (position.speed * 3.6).clamp(0.0, double.infinity)
-        : 0.0;
+    final speedReading = GpsSpeedReading.fromPosition(position);
+    final hasSpeed = speedReading.speedKmh != null;
+    final speed = speedReading.speedKmh ?? 0;
 
     setState(() {
+      _distanceKm += distanceDeltaKm;
       _currentLocation = newLocation;
+      _locationAccuracyMeters = position.hasAccuracy ? position.accuracy : null;
       _currentSpeed = speed;
+      _hasSpeedReading = hasSpeed;
 
-      if (speed > _maxSpeed) {
+      if (hasSpeed && speed > _maxSpeed) {
         _maxSpeed = speed;
       }
 
       _lastPositionTime = position.timestamp;
+      _lastPositionReceivedAt = DateTime.now();
     });
 
     _animateMapToLocation(newLocation);
@@ -324,11 +363,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
 
       case WebSocketEvents.error:
         if (message.message != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message.message!),
-            ),
-          );
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(message.message!)));
         }
         break;
 
@@ -342,42 +378,97 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
 
     final latitude = _toDouble(data['latitude']);
     final longitude = _toDouble(data['longitude']);
-    final speed = _toDouble(data['speedKmh']);
+    final speedReading = GpsSpeedReading.fromValues(
+      speedKmh: _toDouble(data['speedKmh']),
+      accuracyKmh: _toDouble(data['speedAccuracyKmh']),
+    );
+    final locationAccuracy = _toDouble(data['accuracyMeters']);
+    final fixTime = DateTime.tryParse(data['recordedAt']?.toString() ?? '');
 
     if (latitude == null || longitude == null) return;
-
-    final newLocation = LatLng(latitude, longitude);
-
-    if (_currentLocation != null) {
-      final distanceMeters = Geolocator.distanceBetween(
-        _currentLocation!.latitude,
-        _currentLocation!.longitude,
-        latitude,
-        longitude,
-      );
-
-      if (distanceMeters >= _minimumMovementMeters) {
-        _distanceKm += distanceMeters / 1000;
-      }
+    if (fixTime == null) return;
+    if (_lastPositionTime != null && fixTime.isBefore(_lastPositionTime!)) {
+      return;
     }
 
+    final newLocation = LatLng(latitude, longitude);
+    final distanceDeltaKm = _distanceDeltaForFix(
+      newLocation,
+      locationAccuracy,
+      fixTime,
+    );
+
     setState(() {
+      _distanceKm += distanceDeltaKm;
       _currentLocation = newLocation;
+      _locationAccuracyMeters = locationAccuracy;
 
-      if (speed != null) {
+      if (speedReading.speedKmh != null) {
+        final speed = speedReading.speedKmh!;
         _currentSpeed = speed;
-
+        _hasSpeedReading = true;
         if (speed > _maxSpeed) {
           _maxSpeed = speed;
         }
+      } else {
+        _currentSpeed = 0;
+        _hasSpeedReading = false;
       }
 
-      _lastPositionTime = DateTime.tryParse(
-        data['recordedAt']?.toString() ?? '',
-      );
+      _lastPositionTime = fixTime;
+      _lastPositionReceivedAt = DateTime.now();
     });
 
     _animateMapToLocation(newLocation);
+  }
+
+  bool _isFreshPositionTime(DateTime? timestamp) {
+    if (timestamp == null) return false;
+    final age = DateTime.now().toUtc().difference(timestamp.toUtc());
+    return age <= _speedFixStaleAfter && age >= -_speedFixStaleAfter;
+  }
+
+  bool get _hasRecentPosition {
+    final receivedAt = _lastPositionReceivedAt;
+    return receivedAt != null &&
+        DateTime.now().difference(receivedAt) <= _speedFixStaleAfter;
+  }
+
+  double _distanceDeltaForFix(
+    LatLng location,
+    double? accuracyMeters,
+    DateTime? timestamp,
+  ) {
+    if (accuracyMeters == null ||
+        accuracyMeters > _maximumAccuracyMeters ||
+        timestamp == null) {
+      _lastDistanceLocation = null;
+      _lastDistancePositionTime = null;
+      return 0;
+    }
+
+    final previousLocation = _lastDistanceLocation;
+    final previousTime = _lastDistancePositionTime;
+    var distanceDeltaKm = 0.0;
+
+    if (previousLocation != null && previousTime != null) {
+      final gap = timestamp.toUtc().difference(previousTime.toUtc());
+      if (gap > Duration.zero && gap <= _speedFixStaleAfter) {
+        final distanceMeters = Geolocator.distanceBetween(
+          previousLocation.latitude,
+          previousLocation.longitude,
+          location.latitude,
+          location.longitude,
+        );
+        if (distanceMeters >= _minimumMovementMeters) {
+          distanceDeltaKm = distanceMeters / 1000;
+        }
+      }
+    }
+
+    _lastDistanceLocation = location;
+    _lastDistancePositionTime = timestamp;
+    return distanceDeltaKm;
   }
 
   void _handleRideEnded() {
@@ -395,9 +486,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('The rider has ended this ride.'),
-      ),
+      const SnackBar(content: Text('The rider has ended this ride.')),
     );
   }
 
@@ -405,9 +494,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
     if (!mounted || _isDisposed) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Tracking connection error: $error'),
-      ),
+      SnackBar(content: Text('Tracking connection error: $error')),
     );
   }
 
@@ -423,9 +510,9 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
     if (controller == null) return;
 
     unawaited(
-      controller.animateCamera(
-        CameraUpdate.newLatLng(location),
-      ).catchError((Object error) {
+      controller.animateCamera(CameraUpdate.newLatLng(location)).catchError((
+        Object error,
+      ) {
         // Ignore camera errors during map disposal.
       }),
     );
@@ -441,29 +528,90 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
     final shouldEnd = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
+        final colors = Theme.of(dialogContext).colorScheme;
+
         return AlertDialog(
-          title: const Text('End ride?'),
-          content: const Text(
-            'Are you sure you want to end this ride?',
+          backgroundColor: colors.surface,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: BorderSide(color: colors.outlineVariant),
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
-              child: const Text('Continue ride'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
+          titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
+          contentPadding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
+          title: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.stop_circle_outlined,
+                  color: AppColors.danger,
+                ),
               ),
-              child: const Text('End ride'),
-            ),
-          ],
+              const SizedBox(width: 13),
+              const Expanded(child: Text('End this ride?')),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Your guardians will stop receiving your live location and speed, '
+                'including safety alerts if you exceed the speed limit.',
+                style: TextStyle(color: colors.onSurfaceVariant, height: 1.4),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colors.onSurfaceVariant,
+                        side: BorderSide(color: colors.outlineVariant),
+                        minimumSize: const Size(0, 50),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text('Keep riding'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                      label: const Text('End ride'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.danger,
+                        backgroundColor: AppColors.danger.withValues(
+                          alpha: 0.08,
+                        ),
+                        side: BorderSide(
+                          color: AppColors.danger.withValues(alpha: 0.38),
+                        ),
+                        minimumSize: const Size(0, 50),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         );
       },
     );
@@ -485,9 +633,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
         _isTracking = false;
         _isEndingRide = false;
 
-        _duration = DateTime.now().difference(
-          widget.ride.startedAt,
-        );
+        _duration = DateTime.now().difference(widget.ride.startedAt);
       });
 
       await _showRideSummary();
@@ -498,11 +644,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
         _isEndingRide = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unable to end ride: $error'),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Unable to end ride: $error')));
     }
   }
 
@@ -570,20 +713,11 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                 const SizedBox(height: 16),
                 const Text(
                   'Ride completed!',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 24),
-                _summaryRow(
-                  'Distance',
-                  '${_distanceKm.toStringAsFixed(2)} km',
-                ),
-                _summaryRow(
-                  'Duration',
-                  _formatDuration(_duration),
-                ),
+                _summaryRow('Distance', '${_distanceKm.toStringAsFixed(2)} km'),
+                _summaryRow('Duration', _formatDuration(_duration)),
                 _summaryRow(
                   'Average speed',
                   '${_averageSpeed.toStringAsFixed(1)} km/h',
@@ -629,12 +763,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -686,9 +815,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.isGuardian
-        ? 'Live Rider Tracking'
-        : 'Active Ride';
+    final title = widget.isGuardian ? 'Live Rider Tracking' : 'Active Ride';
 
     return PopScope(
       // Allow back navigation without ending the ride.
@@ -697,44 +824,41 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
         appBar: AppBar(
           title: Text(
             title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-            ),
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: Chip(
-                avatar: Icon(
-                  Icons.circle,
-                  color: _isTracking ? Colors.green : Colors.orange,
-                  size: 12,
-                ),
-                label: Text(
-                  _isTracking ? 'LIVE' : 'CONNECTING',
-                ),
+                avatar: _isTracking
+                    ? _BlinkingLiveDot(color: _liveAccuracyColor)
+                    : const Icon(Icons.circle, color: Colors.orange, size: 12),
+                label: Text(_isTracking ? 'LIVE' : 'CONNECTING'),
               ),
             ),
           ],
         ),
         body: SafeArea(
           child: _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(),
-                )
+              ? const Center(child: CircularProgressIndicator())
               : _errorMessage != null
-                  ? _buildError()
-                  : Column(
-                      children: [
-                        _buildMap(),
-                        if (_speedWarning != null)
-                          _buildSpeedWarning(),
-                        Expanded(
-                          child: _buildRideDetails(),
+              ? _buildError()
+              : Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            _buildMap(),
+                            if (_speedWarning != null) _buildSpeedWarning(),
+                            _buildRideDetails(),
+                          ],
                         ),
-                        if (_isRider) _buildEndRideButton(),
-                      ],
+                      ),
                     ),
+                    if (_isRider) _buildEndRideButton(),
+                  ],
+                ),
         ),
       ),
     );
@@ -746,47 +870,118 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
 
   Widget _buildMap() {
     final location = _currentLocation;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
-    final target = location ??
-        const LatLng(17.3850, 78.4867);
+    final target = location ?? const LatLng(17.3850, 78.4867);
 
-    return SizedBox(
-      height: 300,
-      child: GoogleMap(
-        initialCameraPosition: CameraPosition(
-          target: target,
-          zoom: 17,
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.07)
+              : Colors.black.withValues(alpha: 0.06),
+          width: 1,
         ),
-        myLocationEnabled: false,
-        myLocationButtonEnabled: false,
-        zoomControlsEnabled: false,
-        mapToolbarEnabled: false,
-        onMapCreated: (controller) {
-          if (!mounted || _isDisposed) {
-            controller.dispose();
-            return;
-          }
-
-          _mapController = controller;
-          _isMapReady = true;
-
-          if (_currentLocation != null) {
-            _animateMapToLocation(_currentLocation!);
-          }
-        },
-        markers: location == null
-            ? {}
-            : {
-                Marker(
-                  markerId: const MarkerId('rider'),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.04),
+            blurRadius: 22,
+            spreadRadius: 1,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(27),
+        child: SizedBox(
+          height: 300,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: PulsingLocationLayer(
                   position: location,
-                  infoWindow: InfoWindow(
-                    title: widget.isGuardian
-                        ? 'Rider location'
-                        : 'Your current location',
+                  accuracyMeters: _locationAccuracyMeters,
+                  builder: (context, pulseCircles) => GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: target,
+                      zoom: 17,
+                    ),
+                    gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                      Factory<OneSequenceGestureRecognizer>(
+                        () => EagerGestureRecognizer(),
+                      ),
+                    },
+                    myLocationEnabled: false,
+                    myLocationButtonEnabled: false,
+                    zoomControlsEnabled: false,
+                    mapToolbarEnabled: false,
+                    onMapCreated: (controller) {
+                      if (!mounted || _isDisposed) {
+                        controller.dispose();
+                        return;
+                      }
+
+                      _mapController = controller;
+                      _isMapReady = true;
+
+                      if (_currentLocation != null) {
+                        _animateMapToLocation(_currentLocation!);
+                      }
+                    },
+                    circles: pulseCircles,
+                    markers: location == null || _locationMarkerIcon == null
+                        ? {}
+                        : {
+                            Marker(
+                              markerId: const MarkerId('rider'),
+                              position: location,
+                              anchor: const Offset(0.5, 0.5),
+                              icon: _locationMarkerIcon!,
+                              infoWindow: InfoWindow(
+                                title: widget.isGuardian
+                                    ? 'Rider location'
+                                    : 'Your current location',
+                              ),
+                            ),
+                          },
                   ),
                 ),
-              },
+              ),
+              Positioned(
+                right: 16,
+                bottom: 16,
+                child: Tooltip(
+                  message: 'Recenter on live location',
+                  child: Material(
+                    color: theme.colorScheme.surface,
+                    shape: const CircleBorder(),
+                    elevation: 4,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: location == null
+                          ? null
+                          : () => _animateMapToLocation(location),
+                      child: SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Icon(
+                          Icons.my_location_rounded,
+                          color: location == null
+                              ? theme.colorScheme.onSurfaceVariant
+                              : AppColors.primary,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -802,10 +997,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       color: Colors.red.withValues(alpha: 0.12),
       child: Row(
         children: [
-          const Icon(
-            Icons.warning_amber_rounded,
-            color: Colors.red,
-          ),
+          const Icon(Icons.warning_amber_rounded, color: Colors.red),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -822,10 +1014,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                 _speedWarning = null;
               });
             },
-            icon: const Icon(
-              Icons.close,
-              color: Colors.red,
-            ),
+            icon: const Icon(Icons.close, color: Colors.red),
           ),
         ],
       ),
@@ -837,55 +1026,16 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildRideDetails() {
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  widget.isGuardian
-                      ? 'RIDER CURRENT SPEED'
-                      : 'CURRENT SPEED',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _currentSpeed.toStringAsFixed(1),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 52,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Text(
-                  'km/h',
-                  style: TextStyle(
-                    color: Colors.white,
-                  ),
-                ),
-                if (_speedLimit != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    'Speed limit: ${_speedLimit!.toStringAsFixed(0)} km/h',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          const SizedBox(height: 20),
+          SpeedometerGauge(
+            speedKmh: _currentSpeed,
+            isSpeedAvailable: _hasSpeedReading,
+            speedLimitKmh: _speedLimit,
+            isRider: _isRider,
           ),
           const SizedBox(height: 20),
           Row(
@@ -895,6 +1045,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                   'Distance',
                   '${_distanceKm.toStringAsFixed(2)} km',
                   Icons.route,
+                  helperText: _distanceFreshnessLabel,
                 ),
               ),
               const SizedBox(width: 12),
@@ -903,6 +1054,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                   'Duration',
                   _formatDuration(_duration),
                   Icons.timer_outlined,
+                  helperText: 'Elapsed',
                 ),
               ),
             ],
@@ -915,23 +1067,18 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                   'Max speed',
                   '${_maxSpeed.toStringAsFixed(1)} km/h',
                   Icons.speed,
+                  helperText: 'Ride peak',
                 ),
               ),
               const SizedBox(width: 12),
-              Expanded(
-                child: _infoCard(
-                  'Ride code',
-                  widget.ride.rideCode,
-                  Icons.shield_outlined,
-                ),
-              ),
+              Expanded(child: _gpsAccuracyCard()),
             ],
           ),
           if (_lastPositionTime != null) ...[
             const SizedBox(height: 12),
             Text(
               'Last location update: '
-              '${TimeOfDay.fromDateTime(_lastPositionTime!).format(context)}',
+              '${TimeOfDay.fromDateTime(toIndiaStandardTime(_lastPositionTime!)).format(context)} IST',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -943,41 +1090,218 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   Widget _infoCard(
     String title,
     String value,
-    IconData icon,
-  ) {
-    final colorScheme = Theme.of(context).colorScheme;
+    IconData icon, {
+    required String helperText,
+  }) {
+    return _buildRideMetricCard(
+      title: title,
+      value: value,
+      icon: icon,
+      helperText: helperText,
+    );
+  }
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
+  Widget _gpsAccuracyCard() {
+    final accuracyMeters = _locationAccuracyMeters;
+    final quality = accuracyMeters == null
+        ? null
+        : _gpsAccuracyQuality(accuracyMeters);
+    final colorScheme = Theme.of(context).colorScheme;
+    final qualityColor = accuracyMeters == null
+        ? colorScheme.onSurfaceVariant
+        : _gpsAccuracyColor(accuracyMeters);
+
+    return _buildRideMetricCard(
+      title: 'GPS accuracy',
+      value: accuracyMeters == null
+          ? '—'
+          : '±${accuracyMeters.toStringAsFixed(1)} m',
+      icon: Icons.gps_fixed,
+      helperText: quality ?? 'Waiting for GPS',
+      helperColor: qualityColor,
+      onInfoPressed: _showGpsAccuracyInfo,
+    );
+  }
+
+  Widget _buildRideMetricCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required String helperText,
+    Color? helperColor,
+    VoidCallback? onInfoPressed,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      height: 150,
+      child: Container(
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: colors.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: AppColors.primary, size: 19),
+                ),
+                const Spacer(),
+                if (onInfoPressed != null)
+                  IconButton(
+                    onPressed: onInfoPressed,
+                    tooltip: 'About GPS accuracy',
+                    icon: const Icon(Icons.info_outline_rounded),
+                    color: colors.onSurfaceVariant,
+                    iconSize: 19,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 32,
+                      height: 36,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 11),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            const Spacer(),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 18,
+                  height: 1.1,
+                  fontWeight: FontWeight.w800,
+                  color: colors.onSurface,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              helperText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: helperColor ?? colors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    );
+  }
+
+  String _gpsAccuracyQuality(double accuracyMeters) {
+    if (accuracyMeters <= 5) return 'Excellent';
+    if (accuracyMeters <= 10) return 'Good';
+    if (accuracyMeters <= 25) return 'Fair';
+    return 'Weak';
+  }
+
+  String get _distanceFreshnessLabel {
+    if (_hasRecentPosition) return 'Trip total';
+    return _lastPositionTime == null ? 'Waiting for GPS' : 'No recent GPS fix';
+  }
+
+  Color _gpsAccuracyColor(double accuracyMeters) {
+    if (accuracyMeters <= 5) return AppColors.primary;
+    if (accuracyMeters <= 10) return AppColors.success;
+    if (accuracyMeters <= 25) return AppColors.warning;
+    return AppColors.danger;
+  }
+
+  Color get _liveAccuracyColor {
+    final accuracyMeters = _locationAccuracyMeters;
+    if (accuracyMeters == null) {
+      return Theme.of(context).colorScheme.onSurfaceVariant;
+    }
+    if (accuracyMeters <= 5) return AppColors.primary;
+    if (accuracyMeters <= 10) return AppColors.success;
+    if (accuracyMeters <= 25) return AppColors.warning;
+    return AppColors.danger;
+  }
+
+  void _showGpsAccuracyInfo() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final colors = Theme.of(dialogContext).colorScheme;
+
+        return AlertDialog(
+          title: const Text('GPS accuracy'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'GPS accuracy is the estimated radius around the rider’s '
+                'location. A smaller number means a more precise location.',
+              ),
+              const SizedBox(height: 18),
+              _accuracyRangeRow('0–5 m', 'Excellent', AppColors.primary),
+              _accuracyRangeRow('>5–10 m', 'Good', AppColors.success),
+              _accuracyRangeRow('>10–25 m', 'Fair', AppColors.warning),
+              _accuracyRangeRow('>25 m', 'Weak', AppColors.danger),
+              const SizedBox(height: 12),
+              Text(
+                'These ranges are guidance. Buildings, weather, and device '
+                'conditions can affect the GPS estimate.',
+                style: Theme.of(dialogContext).textTheme.bodySmall
+                    ?.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Got it'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _accuracyRangeRow(String range, String label, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
         children: [
-          Icon(
-            icon,
-            color: AppColors.primary,
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(width: 10),
+          SizedBox(width: 72, child: Text(range)),
           Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.bold,
-              color: colorScheme.onSurface,
-            ),
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -990,11 +1314,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
 
   Widget _buildEndRideButton() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
       child: SizedBox(
         width: double.infinity,
-        height: 54,
-        child: ElevatedButton.icon(
+        child: OutlinedButton.icon(
           onPressed: _isEndingRide ? null : _endRide,
           icon: _isEndingRide
               ? const SizedBox(
@@ -1002,18 +1325,18 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                   width: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.white,
+                    color: AppColors.danger,
                   ),
                 )
-              : const Icon(
-                  Icons.stop_circle_outlined,
-                ),
-          label: Text(
-            _isEndingRide ? 'Ending ride...' : 'End Ride',
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            foregroundColor: Colors.white,
+              : const Icon(Icons.stop_circle_outlined, size: 19),
+          label: Text(_isEndingRide ? 'Ending ride…' : 'End ride'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.danger,
+            backgroundColor: AppColors.danger.withValues(alpha: 0.08),
+            side: BorderSide(color: AppColors.danger.withValues(alpha: 0.38)),
+            minimumSize: const Size(0, 56),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            textStyle: const TextStyle(fontWeight: FontWeight.w700),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
             ),
@@ -1034,11 +1357,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.location_off,
-              color: Colors.red,
-              size: 56,
-            ),
+            const Icon(Icons.location_off, color: Colors.red, size: 56),
             const SizedBox(height: 16),
             Text(
               _errorMessage ?? 'Unable to start ride tracking.',
@@ -1062,6 +1381,44 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _BlinkingLiveDot extends StatefulWidget {
+  const _BlinkingLiveDot({required this.color});
+
+  final Color color;
+
+  @override
+  State<_BlinkingLiveDot> createState() => _BlinkingLiveDotState();
+}
+
+class _BlinkingLiveDotState extends State<_BlinkingLiveDot> {
+  Timer? _blinkTimer;
+  bool _isVisible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _blinkTimer = Timer.periodic(const Duration(milliseconds: 700), (_) {
+      if (!mounted) return;
+      setState(() => _isVisible = !_isVisible);
+    });
+  }
+
+  @override
+  void dispose() {
+    _blinkTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: _isVisible ? 1 : 0.25,
+      duration: const Duration(milliseconds: 400),
+      child: Icon(Icons.circle, color: widget.color, size: 12),
     );
   }
 }

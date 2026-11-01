@@ -1,8 +1,15 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../home/screens/home_screen.dart';
+import '../../rides/services/rides_api_service.dart';
 import '../services/auth_service.dart';
+import '../widgets/auth_action_button.dart';
 import 'otp_verification_screen.dart';
 
 class PhoneSignInScreen extends StatefulWidget {
@@ -67,7 +74,7 @@ class _PhoneSignInScreenState extends State<PhoneSignInScreen> {
             _errorMessage = message;
           });
         },
-        onAutoVerified: (_) {},
+        onAutoVerified: _onAutoVerified,
         onTimeout: () {},
       );
     } catch (error, stackTrace) {
@@ -84,6 +91,40 @@ class _PhoneSignInScreenState extends State<PhoneSignInScreen> {
             'Unable to send the verification code. '
             'Please try again.';
       });
+    }
+  }
+
+  void _onAutoVerified(PhoneAuthCredential credential) {
+    unawaited(_completeAutoVerification(credential));
+  }
+
+  Future<void> _completeAutoVerification(PhoneAuthCredential credential) async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await AuthService.instance.signInWithPhoneCredential(credential);
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              HomeScreen(ridesApiService: RidesApiService(ApiClient())),
+        ),
+        (_) => false,
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage = 'Phone sign-in could not be completed. Please retry.';
+      });
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -214,18 +255,15 @@ class _PhoneSignInScreenState extends State<PhoneSignInScreen> {
                   ),
                 ],
                 const SizedBox(height: 28),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _continue,
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Send verification code'),
+                AuthActionButton(
+                  label: 'Send verification code',
+                  loadingLabel: 'Sending code…',
+                  leading: Icon(
+                    Icons.sms_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
+                  isLoading: _isLoading,
+                  onPressed: _continue,
                 ),
                 const SizedBox(height: 20),
                 Text(

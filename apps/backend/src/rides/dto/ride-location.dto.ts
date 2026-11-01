@@ -1,9 +1,4 @@
-import {
-  IsNumber,
-  IsOptional,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsNumber, IsOptional, IsDateString, Max, Min } from 'class-validator';
 
 export class RideLocationDto {
   @IsNumber()
@@ -16,10 +11,17 @@ export class RideLocationDto {
   @Max(180)
   longitude: number;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(350)
-  speedKmh: number;
+  speedKmh?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(350)
+  speedAccuracyKmh?: number | null;
 
   @IsOptional()
   @IsNumber()
@@ -31,4 +33,8 @@ export class RideLocationDto {
   @Min(0)
   @Max(360)
   headingDegrees?: number;
+
+  @IsOptional()
+  @IsDateString()
+  recordedAt?: string;
 }

@@ -2,16 +2,17 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../../websocket/websocket_events.dart';
+import '../models/gps_speed_reading.dart';
 
 class RideLocationService {
   RideLocationService._();
 
-  static final RideLocationService instance =
-      RideLocationService._();
+  static final RideLocationService instance = RideLocationService._();
 
   StreamSubscription<Position>? _positionSubscription;
 
@@ -19,17 +20,23 @@ class RideLocationService {
 
   WebSocketChannel? _channel;
 
+  Timer? _reconnectTimer;
+  Position? _latestPosition;
+  String? _rideId;
+  String? _backendBaseUrl;
+  bool _isGuardianConnection = false;
+  bool _shouldReconnect = false;
+  int _reconnectAttempt = 0;
+
   final StreamController<Position> _positionController =
       StreamController<Position>.broadcast();
 
   final StreamController<WebSocketMessage> _messageController =
       StreamController<WebSocketMessage>.broadcast();
 
-  Stream<Position> get positions =>
-      _positionController.stream;
+  Stream<Position> get positions => _positionController.stream;
 
-  Stream<WebSocketMessage> get messages =>
-      _messageController.stream;
+  Stream<WebSocketMessage> get messages => _messageController.stream;
 
   bool _isTracking = false;
 
@@ -44,37 +51,57 @@ class RideLocationService {
     required String rideId,
     required String backendBaseUrl,
   }) async {
-    if (_isTracking && _isConnected) return;
+    if (_isTracking) {
+      if (!_isConnected && _rideId == rideId) {
+        _scheduleReconnect();
+      }
+      return;
+    }
 
     await _checkLocationPermission();
 
-    await _connect(
-      rideId: rideId,
-      backendBaseUrl: backendBaseUrl,
-    );
+    _rideId = rideId;
+    _backendBaseUrl = backendBaseUrl;
+    _isGuardianConnection = false;
+    _shouldReconnect = true;
 
-    const locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 5,
-    );
+    await _connect(rideId: rideId, backendBaseUrl: backendBaseUrl);
+
+    final LocationSettings locationSettings = switch (defaultTargetPlatform) {
+      TargetPlatform.android => AndroidSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        // Send every GPS fix to the guardian. The backend applies its own
+        // movement threshold before writing another database location row.
+        distanceFilter: 0,
+        intervalDuration: const Duration(seconds: 1),
+      ),
+      TargetPlatform.iOS => AppleSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        activityType: ActivityType.fitness,
+        distanceFilter: 0,
+        pauseLocationUpdatesAutomatically: false,
+      ),
+      _ => const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
+      ),
+    };
 
     _positionSubscription =
-        Geolocator.getPositionStream(
-      locationSettings: locationSettings,
-    ).listen(
-      (position) {
-        _positionController.add(position);
-        _sendLocation(position);
-      },
-      onError: (error) {
-        _messageController.add(
-          WebSocketMessage(
-            type: WebSocketEvents.error,
-            message: error.toString(),
-          ),
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          (position) {
+            _positionController.add(position);
+            _sendLocation(position);
+          },
+          onError: (error) {
+            _messageController.add(
+              WebSocketMessage(
+                type: WebSocketEvents.error,
+                message: error.toString(),
+              ),
+            );
+          },
         );
-      },
-    );
 
     _isTracking = true;
   }
@@ -91,10 +118,12 @@ class RideLocationService {
   }) async {
     if (_isConnected) return;
 
-    await _connect(
-      rideId: rideId,
-      backendBaseUrl: backendBaseUrl,
-    );
+    _rideId = rideId;
+    _backendBaseUrl = backendBaseUrl;
+    _isGuardianConnection = true;
+    _shouldReconnect = true;
+
+    await _connect(rideId: rideId, backendBaseUrl: backendBaseUrl);
   }
 
   Future<void> _connect({
@@ -104,54 +133,49 @@ class RideLocationService {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      throw Exception(
-        'User is not authenticated.',
-      );
+      throw Exception('User is not authenticated.');
     }
 
     final token = await user.getIdToken();
 
     if (token == null || token.isEmpty) {
-      throw Exception(
-        'Unable to retrieve Firebase ID token.',
-      );
+      throw Exception('Unable to retrieve Firebase ID token.');
     }
 
     final wsBaseUrl = backendBaseUrl
         .replaceFirst('https://', 'wss://')
         .replaceFirst('http://', 'ws://');
 
-    final uri = Uri.parse(
-      '$wsBaseUrl/ws/rides',
-    ).replace(
-      queryParameters: {
-        'rideId': rideId,
-        'token': token,
-      },
-    );
+    final uri = Uri.parse('$wsBaseUrl/ws/rides')
+        .replace(queryParameters: {'rideId': rideId, 'token': token});
 
     final channel = WebSocketChannel.connect(uri);
 
     _channel = channel;
 
     try {
-      await channel.ready.timeout(
-        const Duration(seconds: 15),
-      );
+      await channel.ready.timeout(const Duration(seconds: 15));
 
       _isConnected = true;
+      _reconnectAttempt = 0;
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+
+      if (!_isGuardianConnection && _latestPosition != null) {
+        final age = DateTime.now().difference(_latestPosition!.timestamp);
+        if (age >= const Duration(seconds: -5) &&
+            age <= const Duration(seconds: 5)) {
+          _sendLocation(_latestPosition!);
+        }
+      }
 
       _socketSubscription = channel.stream.listen(
         (event) {
           try {
-            final decoded = jsonDecode(
-              event.toString(),
-            );
+            final decoded = jsonDecode(event.toString());
 
             if (decoded is Map<String, dynamic>) {
-              _messageController.add(
-                WebSocketMessage.fromJson(decoded),
-              );
+              _messageController.add(WebSocketMessage.fromJson(decoded));
             }
           } catch (_) {
             _messageController.add(
@@ -164,6 +188,7 @@ class RideLocationService {
         },
         onError: (error) {
           _isConnected = false;
+          _scheduleReconnect();
 
           _messageController.add(
             WebSocketMessage(
@@ -174,6 +199,10 @@ class RideLocationService {
         },
         onDone: () {
           _isConnected = false;
+          if (identical(_channel, channel)) {
+            _channel = null;
+          }
+          _scheduleReconnect();
         },
       );
     } catch (_) {
@@ -187,55 +216,74 @@ class RideLocationService {
   }
 
   void _sendLocation(Position position) {
+    if (_latestPosition != null &&
+        position.timestamp.isBefore(_latestPosition!.timestamp)) {
+      return;
+    }
+    _latestPosition = position;
     final channel = _channel;
 
     if (channel == null || !_isConnected) return;
 
-    if (position.accuracy > 50) return;
-
-    final speedKmh = position.speed < 0
-        ? 0.0
-        : position.speed * 3.6;
+    final speedReading = GpsSpeedReading.fromPosition(position);
 
     final message = WebSocketMessage(
       type: WebSocketEvents.locationUpdate,
       data: {
         'latitude': position.latitude,
         'longitude': position.longitude,
-        'speedKmh': speedKmh,
-        'accuracyMeters': position.accuracy,
-        'headingDegrees': position.heading >= 0
+        'speedKmh': speedReading.speedKmh,
+        'speedAccuracyKmh': speedReading.accuracyKmh,
+        'accuracyMeters': position.hasAccuracy && position.accuracy.isFinite
+            ? position.accuracy
+            : null,
+        'headingDegrees': position.hasHeading && position.heading >= 0
             ? position.heading
-            : 0,
+            : null,
+        'recordedAt': position.timestamp.toUtc().toIso8601String(),
       },
     );
 
     channel.sink.add(message.encode());
   }
 
+  void _scheduleReconnect() {
+    if (!_shouldReconnect || _reconnectTimer != null) return;
+
+    final rideId = _rideId;
+    final backendBaseUrl = _backendBaseUrl;
+    if (rideId == null || backendBaseUrl == null) return;
+
+    final delaySeconds = 1 << _reconnectAttempt.clamp(0, 5).toInt();
+    _reconnectAttempt++;
+    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
+      _reconnectTimer = null;
+      if (!_shouldReconnect || _isConnected) return;
+
+      _connect(rideId: rideId, backendBaseUrl: backendBaseUrl).catchError((
+        Object _,
+      ) {
+        _scheduleReconnect();
+      });
+    });
+  }
+
   Future<void> _checkLocationPermission() async {
-    final serviceEnabled =
-        await Geolocator.isLocationServiceEnabled();
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
 
     if (!serviceEnabled) {
-      throw Exception(
-        'Please enable location services.',
-      );
+      throw Exception('Please enable location services.');
     }
 
-    var permission =
-        await Geolocator.checkPermission();
+    var permission = await Geolocator.checkPermission();
 
     if (permission == LocationPermission.denied) {
-      permission =
-          await Geolocator.requestPermission();
+      permission = await Geolocator.requestPermission();
     }
 
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
-      throw Exception(
-        'Location permission is required to track your ride.',
-      );
+      throw Exception('Location permission is required to track your ride.');
     }
   }
 
@@ -243,6 +291,9 @@ class RideLocationService {
   ///
   /// Call this when the rider explicitly ends the ride.
   Future<void> stopTracking() async {
+    _shouldReconnect = false;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     await _positionSubscription?.cancel();
 
     _positionSubscription = null;
@@ -257,10 +308,16 @@ class RideLocationService {
 
     _isTracking = false;
     _isConnected = false;
+    _rideId = null;
+    _backendBaseUrl = null;
+    _latestPosition = null;
   }
 
   /// Stops only the guardian's receive-only connection.
   Future<void> disconnectGuardian() async {
+    _shouldReconnect = false;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     await _socketSubscription?.cancel();
 
     _socketSubscription = null;
@@ -270,6 +327,8 @@ class RideLocationService {
     _channel = null;
 
     _isConnected = false;
+    _rideId = null;
+    _backendBaseUrl = null;
   }
 
   /// Call only when the application-level service is no longer needed.

@@ -10,6 +10,7 @@ class GuardianRelationshipCard extends StatelessWidget {
   final bool currentUserIsGuardian;
   final VoidCallback onConfigure;
   final VoidCallback onRemove;
+  final Widget? monitoringStatus;
 
   const GuardianRelationshipCard({
     super.key,
@@ -18,6 +19,7 @@ class GuardianRelationshipCard extends StatelessWidget {
     required this.currentUserIsGuardian,
     required this.onConfigure,
     required this.onRemove,
+    this.monitoringStatus,
   });
 
   @override
@@ -153,6 +155,10 @@ class GuardianRelationshipCard extends StatelessWidget {
               ],
             ),
           ),
+          if (monitoringStatus != null) ...[
+            const SizedBox(height: 12),
+            monitoringStatus!,
+          ],
         ],
       ),
     );

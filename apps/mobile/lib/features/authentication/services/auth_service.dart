@@ -60,9 +60,7 @@ class AuthService {
 
     final userCredential = await _firebaseAuth.signInWithCredential(credential);
 
-    // Register the user or retrieve the existing RideGuardian profile.
-    // ApiClient attaches the Firebase ID token to this request.
-    await ApiClient.instance.post('/api/v1/auth/register', body: {});
+    await _registerAuthenticatedUser();
 
     return userCredential;
   }
@@ -118,9 +116,21 @@ class AuthService {
       smsCode: smsCode,
     );
 
+    return signInWithPhoneCredential(credential);
+  }
+
+  Future<UserCredential> signInWithPhoneCredential(
+    PhoneAuthCredential credential,
+  ) async {
     final userCredential = await _firebaseAuth.signInWithCredential(credential);
+    await _registerAuthenticatedUser();
 
     return userCredential;
+  }
+
+  Future<void> _registerAuthenticatedUser() async {
+    // Create or retrieve the RideGuardian profile using the Firebase ID token.
+    await ApiClient.instance.post('/api/v1/auth/register', body: {});
   }
 
   // ---------------------------------------------------------------------------
@@ -184,6 +194,19 @@ class AuthService {
 
       case 'network-request-failed':
         return 'Check your internet connection and try again.';
+
+      case 'internal-error':
+      case 'missing-app-credential':
+      case 'invalid-app-credential':
+        return 'Firebase could not verify this app for phone sign-in. '
+            'Check the iOS reCAPTCHA URL scheme and Firebase API key settings.';
+
+      case 'app-not-authorized':
+        return 'This iOS app is not authorized for phone sign-in. '
+            'Check the registered bundle ID in Firebase.';
+
+      case 'operation-not-allowed':
+        return 'Phone sign-in is not enabled for this Firebase project.';
 
       default:
         return error.message ?? 'Phone verification failed.';
