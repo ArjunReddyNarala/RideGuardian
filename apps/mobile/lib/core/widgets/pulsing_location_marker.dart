@@ -61,14 +61,17 @@ class LiveLocationMarker {
   }
 }
 
-typedef PulsingLocationMapBuilder = Widget Function(
+typedef LocationAccuracyMapBuilder = Widget Function(
   BuildContext context,
   Set<Circle> pulseCircles,
 );
 
-/// Adds low-frequency expanding and fading circles around a live map marker.
-class PulsingLocationLayer extends StatefulWidget {
-  const PulsingLocationLayer({
+/// Builds one stable GPS accuracy circle for a live map marker.
+///
+/// Keeping animation out of the GoogleMap widget prevents native overlay
+/// updates from being sent every animation frame, including during teardown.
+class LocationAccuracyLayer extends StatelessWidget {
+  const LocationAccuracyLayer({
     super.key,
     required this.position,
     required this.builder,
@@ -76,105 +79,30 @@ class PulsingLocationLayer extends StatefulWidget {
   });
 
   final LatLng? position;
-  final PulsingLocationMapBuilder builder;
+  final LocationAccuracyMapBuilder builder;
   final double? accuracyMeters;
 
-  @override
-  State<PulsingLocationLayer> createState() => _PulsingLocationLayerState();
-}
-
-class _PulsingLocationLayerState extends State<PulsingLocationLayer>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  final ValueNotifier<double> _pulseProgress = ValueNotifier(0);
-  final Stopwatch _frameClock = Stopwatch()..start();
-  int _lastFrameMilliseconds = -100;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1900),
-    )..addListener(_onAnimationTick);
-
-    if (widget.position != null) {
-      _controller.repeat();
+  Widget build(BuildContext context) {
+    final currentPosition = position;
+    if (currentPosition == null) {
+      return builder(context, const <Circle>{});
     }
-  }
 
-  @override
-  void didUpdateWidget(covariant PulsingLocationLayer oldWidget) {
-    super.didUpdateWidget(oldWidget);
+    final accuracy = accuracyMeters;
+    final radius = accuracy != null && accuracy.isFinite && accuracy >= 0
+        ? accuracy
+        : 20.0;
 
-    if (oldWidget.position == null && widget.position != null) {
-      _controller.repeat();
-    } else if (oldWidget.position != null && widget.position == null) {
-      _controller.stop();
-      _pulseProgress.value = 0;
-    }
-  }
-
-  void _onAnimationTick() {
-    final now = _frameClock.elapsedMilliseconds;
-    if (now - _lastFrameMilliseconds < 70) return;
-
-    _lastFrameMilliseconds = now;
-    _pulseProgress.value = _controller.value;
-  }
-
-  Set<Circle> _buildPulseCircles(double progress) {
-    final position = widget.position;
-    if (position == null) return const <Circle>{};
-
-    return {
+    return builder(context, {
       Circle(
         circleId: const CircleId('live_location_accuracy'),
-        center: position,
-        radius:
-            widget.accuracyMeters != null &&
-                widget.accuracyMeters!.isFinite &&
-                widget.accuracyMeters! >= 0
-            ? widget.accuracyMeters!
-            : 20,
+        center: currentPosition,
+        radius: radius,
         fillColor: AppColors.primary.withValues(alpha: 0.1),
         strokeColor: AppColors.primary.withValues(alpha: 0.2),
         strokeWidth: 1,
         zIndex: -1,
       ),
-      _pulseCircle(position, progress, 'live_location_pulse_a'),
-      _pulseCircle(position, (progress + 0.5) % 1, 'live_location_pulse_b'),
-    };
-  }
-
-  Circle _pulseCircle(LatLng position, double phase, String id) {
-    final opacity = 1 - phase;
-    return Circle(
-      circleId: CircleId(id),
-      center: position,
-      radius: 18 + (phase * 68),
-      fillColor: AppColors.primary.withValues(alpha: 0.1 * opacity),
-      strokeColor: AppColors.primary.withValues(alpha: 0.28 * opacity),
-      strokeWidth: 2,
-      zIndex: -1,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<double>(
-      valueListenable: _pulseProgress,
-      builder: (context, progress, _) {
-        return widget.builder(context, _buildPulseCircles(progress));
-      },
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _pulseProgress.dispose();
-    _frameClock.stop();
-    super.dispose();
+    });
   }
 }

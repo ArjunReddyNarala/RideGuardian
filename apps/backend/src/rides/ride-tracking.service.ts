@@ -18,7 +18,7 @@ import { RiderSafetySettings } from '../rider-safety-settings/entities/rider-saf
 
 import { SafetyAlert } from '../safety-alerts/entities/safety-alert.entity.js';
 
-import { Notification } from '../notifications/entities/notification.entity.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 import { RideLocationDto } from './dto/ride-location.dto.js';
 
@@ -45,8 +45,7 @@ export class RideTrackingService {
     @InjectRepository(SafetyAlert)
     private readonly safetyAlertRepository: Repository<SafetyAlert>,
 
-    @InjectRepository(Notification)
-    private readonly notificationRepository: Repository<Notification>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async processLocation(riderId: string, rideId: string, dto: RideLocationDto) {
@@ -154,15 +153,14 @@ export class RideTrackingService {
       const savedAlert = await this.safetyAlertRepository.save(alert);
 
       // Notify the guardian.
-      await this.notificationRepository.save(
-        this.notificationRepository.create({
-          userId: setting.guardianId,
-          safetyAlertId: savedAlert.id,
-          type: 'SPEED_LIMIT_EXCEEDED',
-          title: 'Speed limit exceeded',
-          body: `Your rider is travelling at ${dto.speedKmh.toFixed(2)} km/h. Configured limit: ${Number(setting.maxSpeedKmh).toFixed(1)} km/h.`,
-        }),
-      );
+      await this.notificationsService.createForUser({
+        userId: setting.guardianId,
+        safetyAlertId: savedAlert.id,
+        type: 'SPEED_LIMIT_EXCEEDED',
+        title: 'Speed limit exceeded',
+        body: `Your rider is travelling at ${dto.speedKmh.toFixed(2)} km/h. Configured limit: ${Number(setting.maxSpeedKmh).toFixed(1)} km/h.`,
+        category: 'SAFETY',
+      });
 
       alerts.push({
         alertId: savedAlert.id,

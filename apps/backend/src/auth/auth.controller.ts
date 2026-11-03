@@ -89,6 +89,7 @@ export class AuthController {
       name?: string;
       phone?: string;
       profileImageUrl?: string;
+      doNotDisturb?: boolean;
     },
   ) {
     const user = await this.usersService.getUserByFirebaseUid(firebaseUser.uid);

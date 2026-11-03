@@ -24,13 +24,28 @@ export class RiderSafetySettingsService {
     private readonly usersService: UsersService,
   ) {}
 
-  async getSettings(
-    guardianId: string,
-  ): Promise<RiderSafetySettings[]> {
-    return this.safetySettingsRepository.find({
-      where: {
-        guardianId,
+  async getSettings(userId: string): Promise<RiderSafetySettings[]> {
+    // A user can view settings they configured for riders and settings
+    // configured by their guardians for them. Restrict both directions to
+    // accepted relationships so revoked connections cannot expose old values.
+    const relationships = await this.relationshipRepository.find({
+      where: [
+        { guardianId: userId, status: 'ACCEPTED' },
+        { riderId: userId, status: 'ACCEPTED' },
+      ],
+      select: {
+        guardianId: true,
+        riderId: true,
       },
+    });
+
+    if (relationships.length === 0) return [];
+
+    return this.safetySettingsRepository.find({
+      where: relationships.map(({ guardianId, riderId }) => ({
+        guardianId,
+        riderId,
+      })),
       order: {
         createdAt: 'ASC',
       },
@@ -42,10 +57,7 @@ export class RiderSafetySettingsService {
     riderId: string,
     dto: UpdateRiderSafetySettingsDto,
   ): Promise<RiderSafetySettings> {
-    await this.validateGuardianRiderRelationship(
-      guardianId,
-      riderId,
-    );
+    await this.validateGuardianRiderRelationship(guardianId, riderId);
 
     const rider = await this.usersService.getUserById(riderId);
 
@@ -66,8 +78,7 @@ export class RiderSafetySettingsService {
         riderId,
         maxSpeedKmh: dto.maxSpeedKmh ?? null,
         speedAlertEnabled: dto.speedAlertEnabled ?? true,
-        speedAlertCooldownSeconds:
-          dto.speedAlertCooldownSeconds ?? 60,
+        speedAlertCooldownSeconds: dto.speedAlertCooldownSeconds ?? 60,
       });
     } else {
       if (dto.maxSpeedKmh !== undefined) {
@@ -75,13 +86,11 @@ export class RiderSafetySettingsService {
       }
 
       if (dto.speedAlertEnabled !== undefined) {
-        settings.speedAlertEnabled =
-          dto.speedAlertEnabled;
+        settings.speedAlertEnabled = dto.speedAlertEnabled;
       }
 
       if (dto.speedAlertCooldownSeconds !== undefined) {
-        settings.speedAlertCooldownSeconds =
-          dto.speedAlertCooldownSeconds;
+        settings.speedAlertCooldownSeconds = dto.speedAlertCooldownSeconds;
       }
     }
 
@@ -92,14 +101,13 @@ export class RiderSafetySettingsService {
     guardianId: string,
     riderId: string,
   ): Promise<void> {
-    const relationship =
-      await this.relationshipRepository.findOne({
-        where: {
-          guardianId,
-          riderId,
-          status: 'ACCEPTED',
-        },
-      });
+    const relationship = await this.relationshipRepository.findOne({
+      where: {
+        guardianId,
+        riderId,
+        status: 'ACCEPTED',
+      },
+    });
 
     if (!relationship) {
       throw new ForbiddenException(

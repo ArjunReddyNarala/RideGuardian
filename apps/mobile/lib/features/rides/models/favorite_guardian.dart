@@ -5,6 +5,7 @@ class FavoriteGuardian {
     required this.ridesSelected,
     this.profileImageUrl,
     this.lastSelectedAt,
+    this.doNotDisturb = false,
   });
 
   final String id;
@@ -12,6 +13,7 @@ class FavoriteGuardian {
   final int ridesSelected;
   final String? profileImageUrl;
   final DateTime? lastSelectedAt;
+  final bool doNotDisturb;
 
   factory FavoriteGuardian.fromJson(Map<String, dynamic> json) {
     final id = json['id'];
@@ -42,6 +44,7 @@ class FavoriteGuardian {
           : lastSelectedAt is DateTime
           ? lastSelectedAt
           : null,
+      doNotDisturb: json['doNotDisturb'] == true,
     );
   }
 }

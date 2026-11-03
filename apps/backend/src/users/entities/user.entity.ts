@@ -38,6 +38,9 @@ export class User {
   @Column({ name: 'profile_image_url', type: 'text', nullable: true })
   profileImageUrl: string | null;
 
+  @Column({ name: 'do_not_disturb', type: 'boolean', default: false })
+  doNotDisturb: boolean;
+
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 

@@ -8,8 +8,15 @@ import '../features/authentication/widgets/auth_action_button.dart';
 import '../features/home/screens/home_screen.dart';
 import '../features/rides/services/rides_api_service.dart';
 
-class WelcomeScreen extends StatelessWidget {
+class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
+
+  @override
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
+}
+
+class _WelcomeScreenState extends State<WelcomeScreen> {
+  bool _isSigningIn = false;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +31,9 @@ class WelcomeScreen extends StatelessWidget {
         : 'lib/assets/icons/google_sign_in/google_logo_light.png';
 
     return Scaffold(
-      body: SafeArea(
+      body: Stack(
+        children: [
+          SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
@@ -131,7 +140,9 @@ class WelcomeScreen extends StatelessWidget {
                             color: colorScheme.onSurface,
                           ),
                         ),
-                        onPressed: () => _signInWithGoogle(context),
+                          onPressed: _isSigningIn
+                              ? null
+                              : () => _signInWithGoogle(),
                       ),
 
                       const SizedBox(height: 14),
@@ -197,15 +208,49 @@ class WelcomeScreen extends StatelessWidget {
             );
           },
         ),
+          ),
+          if (_isSigningIn)
+            Positioned.fill(
+              child: ColoredBox(
+                color: colorScheme.scrim.withValues(alpha: 0.38),
+                child: Center(
+                  child: Semantics(
+                    liveRegion: true,
+                    label: 'Signing in with Google',
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 28,
+                          vertical: 24,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Signing you in…',
+                              style: textTheme.titleMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  Future<void> _signInWithGoogle(BuildContext context) async {
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isSigningIn = true);
     try {
       await AuthService.instance.signInWithGoogle();
 
-      if (!context.mounted) return;
+      if (!mounted) return;
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
@@ -214,13 +259,15 @@ class WelcomeScreen extends StatelessWidget {
         ),
       );
     } catch (error) {
-      if (!context.mounted) return;
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Google sign-in failed. Please try again.'),
         ),
       );
+    } finally {
+      if (mounted) setState(() => _isSigningIn = false);
     }
   }
 }

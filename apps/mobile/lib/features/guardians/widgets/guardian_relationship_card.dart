@@ -34,6 +34,10 @@ class GuardianRelationshipCard extends StatelessWidget {
     final photoUrl = person?.profileImageUrl;
 
     final maxSpeed = setting?.maxSpeedKmh;
+    final speedSettingsAction = maxSpeed == null ? 'Configure' : 'Edit';
+    final removeAction = currentUserIsGuardian
+        ? 'Stop monitoring'
+        : 'Remove guardian';
 
     return Container(
       padding: const EdgeInsets.all(15),
@@ -88,31 +92,6 @@ class GuardianRelationshipCard extends StatelessWidget {
                   ],
                 ),
               ),
-              PopupMenuButton<String>(
-                tooltip: 'Relationship options',
-                onSelected: (value) {
-                  if (value == 'settings') {
-                    onConfigure();
-                  } else if (value == 'remove') {
-                    onRemove();
-                  }
-                },
-                itemBuilder: (_) => [
-                  if (currentUserIsGuardian)
-                    const PopupMenuItem(
-                      value: 'settings',
-                      child: Text('Speed settings'),
-                    ),
-                  const PopupMenuItem(
-                    value: 'remove',
-                    child: Text('Remove connection'),
-                  ),
-                ],
-                child: Icon(
-                  Icons.more_horiz_rounded,
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 15),
@@ -144,8 +123,8 @@ class GuardianRelationshipCard extends StatelessWidget {
                 if (currentUserIsGuardian)
                   TextButton(
                     onPressed: onConfigure,
-                    child: const Text(
-                      'Configure',
+                    child: Text(
+                      speedSettingsAction,
                       style: TextStyle(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w800,
@@ -159,6 +138,27 @@ class GuardianRelationshipCard extends StatelessWidget {
             const SizedBox(height: 12),
             monitoringStatus!,
           ],
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onRemove,
+              icon: const Icon(Icons.link_off_rounded, size: 18),
+              label: Text(removeAction),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.danger,
+                backgroundColor: AppColors.danger.withValues(alpha: 0.07),
+                side: BorderSide(
+                  color: AppColors.danger.withValues(alpha: 0.28),
+                ),
+                minimumSize: const Size.fromHeight(46),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
         ],
       ),
     );

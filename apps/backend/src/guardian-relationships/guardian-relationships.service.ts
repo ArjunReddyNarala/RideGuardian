@@ -18,6 +18,7 @@ interface PublicUser {
   email: string | null;
   phone: string | null;
   profileImageUrl: string | null;
+  doNotDisturb: boolean;
 }
 
 export interface RelationshipResponse {
@@ -189,6 +190,7 @@ export class GuardianRelationshipsService {
       email: user.email ?? null,
       phone: user.phone ?? null,
       profileImageUrl: user.profileImageUrl ?? null,
+      doNotDisturb: user.doNotDisturb,
     };
   }
 

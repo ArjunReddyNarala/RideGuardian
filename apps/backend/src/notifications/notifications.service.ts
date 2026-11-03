@@ -1,12 +1,21 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 
 import { Notification } from './entities/notification.entity.js';
 import { UsersService } from '../users/users.service.js';
+import { UserSetting } from '../settings/entities/user-setting.entity.js';
+
+export type NotificationCategory = 'RIDE' | 'SAFETY' | 'GENERAL';
+
+export interface CreateNotificationInput {
+  userId: string;
+  type: string;
+  title: string;
+  body: string;
+  category?: NotificationCategory;
+  safetyAlertId?: string | null;
+}
 
 @Injectable()
 export class NotificationsService {
@@ -14,15 +23,59 @@ export class NotificationsService {
     @InjectRepository(Notification)
     private readonly notificationRepository: Repository<Notification>,
 
+    @InjectRepository(UserSetting)
+    private readonly settingsRepository: Repository<UserSetting>,
+
     private readonly usersService: UsersService,
   ) {}
+
+  /** Store an in-app notification unless the user disabled its category. */
+  async createForUser(
+    input: CreateNotificationInput,
+  ): Promise<Notification | null> {
+    const settings = await this.settingsRepository.findOne({
+      where: { userId: input.userId },
+      select: {
+        notificationsEnabled: true,
+        rideUpdatesEnabled: true,
+        speedAlertsEnabled: true,
+      },
+    });
+
+    if (settings?.notificationsEnabled === false) return null;
+    if (input.category === 'RIDE' && settings?.rideUpdatesEnabled === false) {
+      return null;
+    }
+    if (input.category === 'SAFETY' && settings?.speedAlertsEnabled === false) {
+      return null;
+    }
+
+    return this.notificationRepository.save(
+      this.notificationRepository.create({
+        userId: input.userId,
+        safetyAlertId: input.safetyAlertId ?? null,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+      }),
+    );
+  }
+
+  async createForUsers(
+    userIds: string[],
+    input: Omit<CreateNotificationInput, 'userId'>,
+  ): Promise<void> {
+    const uniqueUserIds = [...new Set(userIds)];
+    await Promise.all(
+      uniqueUserIds.map((userId) => this.createForUser({ ...input, userId })),
+    );
+  }
 
   /**
    * Resolve the authenticated Firebase user to the database user.
    */
   private async getDatabaseUser(firebaseUid: string) {
-    const user =
-      await this.usersService.getUserByFirebaseUid(firebaseUid);
+    const user = await this.usersService.getUserByFirebaseUid(firebaseUid);
 
     if (!user) {
       throw new NotFoundException(
@@ -38,11 +91,7 @@ export class NotificationsService {
    *
    * Returns notifications belonging to the logged-in user.
    */
-  async getNotifications(
-    firebaseUid: string,
-    page = 1,
-    limit = 20,
-  ) {
+  async getNotifications(firebaseUid: string, page = 1, limit = 20) {
     const user = await this.getDatabaseUser(firebaseUid);
 
     const safePage = Math.max(1, page);
@@ -94,19 +143,15 @@ export class NotificationsService {
    *
    * Marks one notification as read.
    */
-  async markAsRead(
-    firebaseUid: string,
-    notificationId: string,
-  ) {
+  async markAsRead(firebaseUid: string, notificationId: string) {
     const user = await this.getDatabaseUser(firebaseUid);
 
-    const notification =
-      await this.notificationRepository.findOne({
-        where: {
-          id: notificationId,
-          userId: user.id,
-        },
-      });
+    const notification = await this.notificationRepository.findOne({
+      where: {
+        id: notificationId,
+        userId: user.id,
+      },
+    });
 
     if (!notification) {
       throw new NotFoundException('Notification not found.');

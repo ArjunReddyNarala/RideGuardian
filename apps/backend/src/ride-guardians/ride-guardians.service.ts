@@ -11,6 +11,7 @@ import { IsNull, Repository } from 'typeorm';
 import { GuardianRiderRelationship } from '../guardian-relationships/entities/guardian-rider-relationship.entity.js';
 import { Ride } from '../rides/entities/ride.entity.js';
 import { User } from '../users/entities/user.entity.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 import { AddRideGuardianDto } from './dto/add-ride-guardian.dto.js';
 import { RideGuardian } from './entities/ride-guardian.entity.js';
@@ -29,6 +30,8 @@ export class RideGuardiansService {
 
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -51,9 +54,7 @@ export class RideGuardiansService {
 
     // A rider cannot add themselves as their own guardian.
     if (riderId === dto.guardianId) {
-      throw new ForbiddenException(
-        'A rider cannot be their own guardian',
-      );
+      throw new ForbiddenException('A rider cannot be their own guardian');
     }
 
     // Verify that the guardian exists and has an active account.
@@ -65,21 +66,24 @@ export class RideGuardiansService {
     });
 
     if (!guardian) {
-      throw new NotFoundException(
-        'Guardian not found or inactive',
+      throw new NotFoundException('Guardian not found or inactive');
+    }
+
+    if (guardian.doNotDisturb) {
+      throw new ForbiddenException(
+        'This guardian is currently unavailable (Do Not Disturb is on)',
       );
     }
 
     // Verify that the guardian has an accepted relationship
     // with the rider who owns this ride.
-    const relationship =
-      await this.relationshipRepository.findOne({
-        where: {
-          guardianId: dto.guardianId,
-          riderId,
-          status: 'ACCEPTED',
-        },
-      });
+    const relationship = await this.relationshipRepository.findOne({
+      where: {
+        guardianId: dto.guardianId,
+        riderId,
+        status: 'ACCEPTED',
+      },
+    });
 
     if (!relationship) {
       throw new ForbiddenException(
@@ -88,13 +92,12 @@ export class RideGuardiansService {
     }
 
     // Look for an existing assignment, including removed assignments.
-    const existingAssignment =
-      await this.rideGuardianRepository.findOne({
-        where: {
-          rideId,
-          guardianId: dto.guardianId,
-        },
-      });
+    const existingAssignment = await this.rideGuardianRepository.findOne({
+      where: {
+        rideId,
+        guardianId: dto.guardianId,
+      },
+    });
 
     if (existingAssignment) {
       // The guardian is already assigned to this ride.
@@ -107,9 +110,10 @@ export class RideGuardiansService {
       // Restore the previous assignment instead of inserting a duplicate.
       existingAssignment.removedAt = null;
 
-      return this.rideGuardianRepository.save(
-        existingAssignment,
-      );
+      const restoredAssignment =
+        await this.rideGuardianRepository.save(existingAssignment);
+      await this.notifyGuardianAdded(ride, dto.guardianId);
+      return restoredAssignment;
     }
 
     // Create a new ride-guardian assignment.
@@ -119,29 +123,41 @@ export class RideGuardiansService {
       removedAt: null,
     });
 
-    return this.rideGuardianRepository.save(assignment);
+    const savedAssignment = await this.rideGuardianRepository.save(assignment);
+    await this.notifyGuardianAdded(ride, dto.guardianId);
+    return savedAssignment;
+  }
+
+  private async notifyGuardianAdded(ride: Ride, guardianId: string) {
+    try {
+      await this.notificationsService.createForUser({
+        userId: guardianId,
+        type: 'RIDE_STARTED',
+        title: 'You were added to a ride',
+        body: `You can now monitor ride ${ride.rideCode}.`,
+        category: 'RIDE',
+      });
+    } catch (error) {
+      console.error('Could not create ride-guardian notification:', error);
+    }
   }
 
   /**
    * Get all currently assigned guardians for a ride.
    */
-  async getGuardians(
-    riderId: string,
-    rideId: string,
-  ) {
+  async getGuardians(riderId: string, rideId: string) {
     // Only the rider who owns the ride can list its guardians.
     await this.getOwnedRide(riderId, rideId);
 
-    const assignments =
-      await this.rideGuardianRepository.find({
-        where: {
-          rideId,
-          removedAt: IsNull(),
-        },
-        order: {
-          addedAt: 'ASC',
-        },
-      });
+    const assignments = await this.rideGuardianRepository.find({
+      where: {
+        rideId,
+        removedAt: IsNull(),
+      },
+      order: {
+        addedAt: 'ASC',
+      },
+    });
 
     // Return assignment information together with guardian profiles.
     const guardians = await Promise.all(
@@ -169,35 +185,26 @@ export class RideGuardiansService {
       }),
     );
 
-    return guardians.filter(
-      (guardian) => guardian !== null,
-    );
+    return guardians.filter((guardian) => guardian !== null);
   }
 
   /**
    * Remove a guardian from a ride.
    */
-  async removeGuardian(
-    riderId: string,
-    rideId: string,
-    guardianId: string,
-  ) {
+  async removeGuardian(riderId: string, rideId: string, guardianId: string) {
     // Verify that the authenticated rider owns the ride.
     await this.getOwnedRide(riderId, rideId);
 
-    const assignment =
-      await this.rideGuardianRepository.findOne({
-        where: {
-          rideId,
-          guardianId,
-          removedAt: IsNull(),
-        },
-      });
+    const assignment = await this.rideGuardianRepository.findOne({
+      where: {
+        rideId,
+        guardianId,
+        removedAt: IsNull(),
+      },
+    });
 
     if (!assignment) {
-      throw new NotFoundException(
-        'Guardian is not assigned to this ride',
-      );
+      throw new NotFoundException('Guardian is not assigned to this ride');
     }
 
     // Soft removal preserves the assignment history.
@@ -218,10 +225,7 @@ export class RideGuardiansService {
    * The caller supplies riderId from the authenticated user's
    * database profile, never from the request body.
    */
-  private async getOwnedRide(
-    riderId: string,
-    rideId: string,
-  ): Promise<Ride> {
+  private async getOwnedRide(riderId: string, rideId: string): Promise<Ride> {
     const ride = await this.rideRepository.findOne({
       where: {
         id: rideId,

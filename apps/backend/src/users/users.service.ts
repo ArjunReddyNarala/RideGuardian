@@ -16,6 +16,7 @@ export class UsersService {
     email?: string;
     phone?: string;
     profileImageUrl?: string;
+    doNotDisturb?: boolean;
   }): Promise<User> {
     const user = this.userRepository.create({
       firebaseUid: data.firebaseUid,
@@ -40,6 +41,7 @@ export class UsersService {
       name?: string;
       phone?: string;
       profileImageUrl?: string;
+      doNotDisturb?: boolean;
     },
   ): Promise<User | null> {
     const user = await this.getUserById(id);

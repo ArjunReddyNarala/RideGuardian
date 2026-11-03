@@ -141,8 +141,10 @@ class _PhoneSignInScreenState extends State<PhoneSignInScreen> {
           icon: const Icon(Icons.arrow_back_rounded),
         ),
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
+      body: Stack(
+        children: [
+          SafeArea(
+            child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
           child: Form(
             key: _formKey,
@@ -278,7 +280,40 @@ class _PhoneSignInScreenState extends State<PhoneSignInScreen> {
               ],
             ),
           ),
-        ),
+            ),
+          ),
+          if (_isLoading)
+            Positioned.fill(
+              child: ColoredBox(
+                color: theme.colorScheme.scrim.withValues(alpha: 0.38),
+                child: Center(
+                  child: Semantics(
+                    liveRegion: true,
+                    label: 'Sending verification code',
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 28,
+                          vertical: 24,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Sending verification code…',
+                              style: textTheme.titleMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

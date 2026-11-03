@@ -147,6 +147,7 @@ class _RideStartScreenState extends State<RideStartScreen>
 
         // Keep only selections that still have an accepted relationship.
         final availableIds = acceptedGuardians
+            .where((item) => item.guardian?.doNotDisturb != true)
             .map((item) => item.guardianId)
             .toSet();
 
@@ -185,6 +186,31 @@ class _RideStartScreenState extends State<RideStartScreen>
         _selectedGuardianIds.add(guardianId);
       }
     });
+  }
+
+  void _handleGuardianTap(GuardianRelationship relationship) {
+    final guardian = relationship.guardian;
+    if (guardian?.doNotDisturb == true) {
+      showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Guardian unavailable'),
+          content: Text(
+            '${guardian!.name} has Do Not Disturb enabled and can’t be added '
+            'to this ride. They can be selected again when they turn it off.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Got it'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    _toggleGuardian(relationship.guardianId);
   }
 
   Future<void> _startRide() async {
@@ -340,14 +366,16 @@ class _RideStartScreenState extends State<RideStartScreen>
                         final isSelected = _selectedGuardianIds.contains(
                           relationship.guardianId,
                         );
+                        final isUnavailable =
+                            relationship.guardian?.doNotDisturb ?? false;
 
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: GuardianSelectionCard(
                             relationship: relationship,
                             isSelected: isSelected,
-                            onTap: () =>
-                                _toggleGuardian(relationship.guardianId),
+                            isUnavailable: isUnavailable,
+                            onTap: () => _handleGuardianTap(relationship),
                           ),
                         );
                       }),
@@ -395,37 +423,47 @@ class _RideStartScreenState extends State<RideStartScreen>
       children: [
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: colors.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+            color: colors.surfaceContainerHighest.withValues(alpha: 0.48),
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Column(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.radio_button_checked_rounded,
-                    color: AppColors.primary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 9),
-                  Text(
-                    'Ride in progress',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.13),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.route_rounded,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
               ),
-              const SizedBox(height: 7),
-              Text(
-                'You already have an active ride. Continue to its live safety dashboard.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
-                  height: 1.45,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ride in progress',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'An active ride is already running. Open its dashboard below.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

@@ -11,7 +11,7 @@ import { RiderSafetySettings } from '../rider-safety-settings/entities/rider-saf
 
 import { SafetyAlert } from '../safety-alerts/entities/safety-alert.entity.js';
 
-import { Notification } from '../notifications/entities/notification.entity.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 
 import { AuthModule } from '../auth/auth.module.js';
 
@@ -36,26 +36,17 @@ import { RideTrackingService } from './ride-tracking.service.js';
       GuardianRiderRelationship,
       RiderSafetySettings,
       SafetyAlert,
-      Notification,
     ]),
 
     UsersModule,
     AuthModule,
+    NotificationsModule,
   ],
 
-  controllers: [
-    RidesController,
-  ],
+  controllers: [RidesController],
 
-  providers: [
-    RidesService,
-    RideTrackingService,
-    RideTrackingGateway,
-  ],
+  providers: [RidesService, RideTrackingService, RideTrackingGateway],
 
-  exports: [
-    RidesService,
-    RideTrackingService,
-  ],
+  exports: [RidesService, RideTrackingService],
 })
 export class RidesModule {}

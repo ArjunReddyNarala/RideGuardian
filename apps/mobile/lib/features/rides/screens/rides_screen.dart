@@ -14,10 +14,14 @@ class RidesScreen extends StatefulWidget {
     super.key,
     required this.ridesApiService,
     this.isVisible = true,
+    this.initialSelectedTab = 0,
+    this.selectionRequestId = 0,
   });
 
   final RidesApiService ridesApiService;
   final bool isVisible;
+  final int initialSelectedTab;
+  final int selectionRequestId;
 
   @override
   State<RidesScreen> createState() => _RidesScreenState();
@@ -58,17 +62,26 @@ class _RidesScreenState extends State<RidesScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedTab = widget.initialSelectedTab.clamp(0, 1).toInt();
     widget.ridesApiService.addListener(_handleRideLifecycleChange);
-    if (widget.isVisible) _loadPage(reset: true, tab: 0);
+    if (widget.isVisible) _loadPage(reset: true, tab: _selectedTab);
   }
 
   @override
   void didUpdateWidget(covariant RidesScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.isVisible && widget.isVisible) {
-      if (_needsRefresh(_selectedTab)) {
-        _loadPage(reset: true, tab: _selectedTab);
-      }
+    final requestedTab = widget.initialSelectedTab.clamp(0, 1).toInt();
+    final selectionRequested =
+        oldWidget.selectionRequestId != widget.selectionRequestId;
+    final tabChanged =
+        oldWidget.initialSelectedTab != widget.initialSelectedTab;
+    if (selectionRequested || tabChanged) _selectedTab = requestedTab;
+
+    if (((!oldWidget.isVisible && widget.isVisible) ||
+            selectionRequested ||
+            tabChanged) &&
+        _needsRefresh(_selectedTab)) {
+      _loadPage(reset: true, tab: _selectedTab);
     }
   }
 
@@ -213,9 +226,9 @@ class _RidesScreenState extends State<RidesScreen> {
       backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        title: const Text(
-          'My Rides',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        title: Text(
+          _selectedTab == 0 ? 'My Rides' : 'Monitored Rides',
+          style: const TextStyle(fontWeight: FontWeight.w800),
         ),
         actions: [
           IconButton(
@@ -247,10 +260,7 @@ class _RidesScreenState extends State<RidesScreen> {
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
-        children: [
-          _tabButton('My rides', 0),
-          _tabButton('Rides I monitored', 1),
-        ],
+        children: [_tabButton('My rides', 0), _tabButton('Monitored', 1)],
       ),
     );
   }
@@ -280,6 +290,14 @@ class _RidesScreenState extends State<RidesScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                Icon(
+                  index == 0 ? Icons.route_rounded : Icons.shield_outlined,
+                  size: 16,
+                  color: selected
+                      ? AppColors.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
                 Flexible(
                   child: Text(
                     label,
@@ -394,27 +412,105 @@ class _RidesScreenState extends State<RidesScreen> {
   }
 
   List<Widget> _buildMonitoredRides() {
+    final activeRides = _monitoredRides.where((ride) => ride.isActive).toList();
+    final rideHistory = _monitoredRides
+        .where((ride) => !ride.isActive)
+        .toList();
+
     return [
-      _buildSectionHeading('Rides shared with you', count: _monitoredTotal),
-      const SizedBox(height: 6),
-      Text(
-        'Ride history appears here only when another rider selected you as a guardian.',
-        style: Theme.of(context).textTheme.bodyMedium
-            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-      ),
-      const SizedBox(height: 14),
+      _buildMonitoringHeader(),
+      const SizedBox(height: 22),
       if (_monitoredRides.isEmpty)
         _buildEmptyCard(
           'Rides shared with you will appear here.',
           Icons.shield_outlined,
         )
-      else
-        ..._monitoredRides.map(
-          (ride) => ride.isActive
-              ? _buildActiveRideCard(ride, monitored: true)
-              : _buildHistoryRideCard(ride, monitored: true),
-        ),
+      else ...[
+        if (activeRides.isNotEmpty) ...[
+          _buildSectionHeading('Live rides', count: activeRides.length),
+          const SizedBox(height: 12),
+          ...activeRides.map(
+            (ride) => _buildActiveRideCard(ride, monitored: true),
+          ),
+          const SizedBox(height: 12),
+        ],
+        _buildSectionHeading('Recent history', count: rideHistory.length),
+        const SizedBox(height: 12),
+        if (rideHistory.isEmpty)
+          _buildEmptyCard(
+            'Completed monitored rides will appear here.',
+            Icons.history_rounded,
+          )
+        else
+          ...rideHistory.map(
+            (ride) => _buildHistoryRideCard(ride, monitored: true),
+          ),
+      ],
     ];
+  }
+
+  Widget _buildMonitoringHeader() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(Icons.shield_rounded, color: AppColors.primary),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your monitoring',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Rides shared with you by your connections.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: colors.surface.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '$_monitoredTotal',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildSectionHeading(String title, {int? count}) {

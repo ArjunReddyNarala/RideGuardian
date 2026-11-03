@@ -25,6 +25,7 @@ class _LiveMapCardState extends State<LiveMapCard> {
 
   bool _isLoading = true;
   bool _isFollowingLocation = true;
+  bool _isDisposed = false;
   String? _locationError;
 
   static const LatLng _fallbackLocation = LatLng(17.3850, 78.4867);
@@ -142,7 +143,7 @@ class _LiveMapCardState extends State<LiveMapCard> {
   }
 
   void _onPositionUpdate(Position position) {
-    if (!mounted) return;
+    if (!mounted || _isDisposed) return;
 
     setState(() {
       _currentPosition = position;
@@ -155,6 +156,8 @@ class _LiveMapCardState extends State<LiveMapCard> {
   }
 
   Future<void> _moveCamera(Position position) async {
+    if (!mounted || _isDisposed) return;
+
     final controller = _mapController;
 
     if (controller == null) return;
@@ -176,6 +179,10 @@ class _LiveMapCardState extends State<LiveMapCard> {
   }
 
   void _onMapCreated(GoogleMapController controller) {
+    if (!mounted || _isDisposed) {
+      return;
+    }
+
     _mapController = controller;
 
     final position = _currentPosition;
@@ -202,8 +209,10 @@ class _LiveMapCardState extends State<LiveMapCard> {
 
   @override
   void dispose() {
-    _positionSubscription?.cancel();
-    _mapController?.dispose();
+    _isDisposed = true;
+    unawaited(_positionSubscription?.cancel());
+    // GoogleMap owns and disposes its controller when its widget is removed.
+    _mapController = null;
     super.dispose();
   }
 
@@ -244,7 +253,7 @@ class _LiveMapCardState extends State<LiveMapCard> {
           width: double.infinity,
           child: Stack(
             children: [
-              PulsingLocationLayer(
+              LocationAccuracyLayer(
                 position: currentPosition == null
                     ? null
                     : LatLng(
@@ -254,7 +263,7 @@ class _LiveMapCardState extends State<LiveMapCard> {
                 accuracyMeters: currentPosition?.hasAccuracy == true
                     ? currentPosition!.accuracy
                     : null,
-                builder: (context, pulseCircles) => GoogleMap(
+                builder: (context, accuracyCircles) => GoogleMap(
                   initialCameraPosition: CameraPosition(
                     target: initialTarget,
                     zoom: 15,
@@ -293,7 +302,7 @@ class _LiveMapCardState extends State<LiveMapCard> {
                   // Use the normal Google Maps appearance.
                   style: null,
 
-                  circles: pulseCircles,
+                  circles: accuracyCircles,
                   markers:
                       currentPosition == null || _locationMarkerIcon == null
                       ? <Marker>{}

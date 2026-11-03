@@ -698,45 +698,129 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       isDismissible: false,
       enableDrag: false,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        final colors = theme.colorScheme;
+
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.check_circle_rounded,
-                  color: Colors.green,
-                  size: 64,
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Ride completed!',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 24),
-                _summaryRow('Distance', '${_distanceKm.toStringAsFixed(2)} km'),
-                _summaryRow('Duration', _formatDuration(_duration)),
-                _summaryRow(
-                  'Average speed',
-                  '${_averageSpeed.toStringAsFixed(1)} km/h',
-                ),
-                _summaryRow(
-                  'Maximum speed',
-                  '${_maxSpeed.toStringAsFixed(1)} km/h',
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(sheetContext);
-                    },
-                    child: const Text('Back to Rides'),
+          top: false,
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.82,
+            ),
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.16),
+              ),
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 38,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 24),
+                  Center(
+                    child: Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        color: AppColors.primary,
+                        size: 32,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Ride completed',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Ride tracking has stopped. Here’s your trip summary.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _summaryMetric(
+                          icon: Icons.route_rounded,
+                          label: 'Distance',
+                          value: '${_distanceKm.toStringAsFixed(2)} km',
+                          context: sheetContext,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _summaryMetric(
+                          icon: Icons.schedule_rounded,
+                          label: 'Duration',
+                          value: _formatDuration(_duration),
+                          context: sheetContext,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _summaryMetric(
+                          icon: Icons.speed_rounded,
+                          label: 'Average speed',
+                          value: '${_averageSpeed.toStringAsFixed(1)} km/h',
+                          context: sheetContext,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _summaryMetric(
+                          icon: Icons.speed_rounded,
+                          label: 'Maximum speed',
+                          value: '${_maxSpeed.toStringAsFixed(1)} km/h',
+                          context: sheetContext,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    height: 54,
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      label: const Text('Back to Rides'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -756,14 +840,57 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
     return _distanceKm / hours;
   }
 
-  Widget _summaryRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _summaryMetric({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 96),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.46),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: colors.outlineVariant.withValues(alpha: 0.45),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(label),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              Icon(icon, size: 16, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -901,10 +1028,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
           child: Stack(
             children: [
               Positioned.fill(
-                child: PulsingLocationLayer(
+                child: LocationAccuracyLayer(
                   position: location,
                   accuracyMeters: _locationAccuracyMeters,
-                  builder: (context, pulseCircles) => GoogleMap(
+                  builder: (context, accuracyCircles) => GoogleMap(
                     initialCameraPosition: CameraPosition(
                       target: target,
                       zoom: 17,
@@ -920,7 +1047,6 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                     mapToolbarEnabled: false,
                     onMapCreated: (controller) {
                       if (!mounted || _isDisposed) {
-                        controller.dispose();
                         return;
                       }
 
@@ -931,7 +1057,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                         _animateMapToLocation(_currentLocation!);
                       }
                     },
-                    circles: pulseCircles,
+                    circles: accuracyCircles,
                     markers: location == null || _locationMarkerIcon == null
                         ? {}
                         : {

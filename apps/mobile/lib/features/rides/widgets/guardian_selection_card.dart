@@ -9,11 +9,13 @@ class GuardianSelectionCard extends StatelessWidget {
     required this.relationship,
     required this.isSelected,
     required this.onTap,
+    this.isUnavailable = false,
   });
 
   final GuardianRelationship relationship;
   final bool isSelected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool isUnavailable;
 
   @override
   Widget build(BuildContext context) {
@@ -48,8 +50,7 @@ class GuardianSelectionCard extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 24,
-                backgroundColor:
-                    AppColors.primary.withValues(alpha: 0.12),
+                backgroundColor: AppColors.primary.withValues(alpha: 0.12),
                 backgroundImage: guardian?.profileImageUrl != null
                     ? NetworkImage(guardian!.profileImageUrl!)
                     : null,
@@ -86,23 +87,34 @@ class GuardianSelectionCard extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 5),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.verified_rounded,
-                          size: 13,
-                          color: Colors.green,
+                    if (isUnavailable) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        'Do Not Disturb is on',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: const Color(0xFF8B5CF6),
+                          fontWeight: FontWeight.w700,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Connected guardian',
-                          style: theme.textTheme.labelSmall?.copyWith(
+                      ),
+                    ],
+                    if (!isUnavailable)
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.verified_rounded,
+                            size: 13,
                             color: Colors.green,
-                            fontWeight: FontWeight.w600,
                           ),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Connected guardian',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.green,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -112,14 +124,10 @@ class GuardianSelectionCard extends StatelessWidget {
                 width: 24,
                 height: 24,
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? AppColors.primary
-                      : Colors.transparent,
+                  color: isSelected ? AppColors.primary : Colors.transparent,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: isSelected
-                        ? AppColors.primary
-                        : colorScheme.outline,
+                    color: isSelected ? AppColors.primary : colorScheme.outline,
                     width: 1.5,
                   ),
                 ),

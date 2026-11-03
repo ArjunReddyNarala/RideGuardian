@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/india_time.dart';
 import '../../guardians/screens/guardians_screen.dart';
@@ -11,7 +14,10 @@ import '../../rides/screens/ride_start_screen.dart';
 import '../../rides/screens/rides_screen.dart';
 import '../../rides/services/rides_api_service.dart';
 import '../../rides/widgets/ride_action_button.dart';
+import '../../notifications/screens/notifications_screen.dart';
+import '../../notifications/services/notifications_api_service.dart';
 import '../widgets/live_map_card.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.ridesApiService});
@@ -22,10 +28,18 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
+  int _ridesInitialTab = 0;
+  int _ridesNavigationRequest = 0;
 
   late Future<List<Ride>> _recentRidesFuture;
+  late Future<List<Ride>> _recentMonitoredRidesFuture;
+  late final ApiClient _notificationsApiClient = ApiClient();
+  late final NotificationsApiService _notificationsApiService =
+      NotificationsApiService(_notificationsApiClient);
+  Timer? _notificationsRefreshTimer;
+  int _unreadNotifications = 0;
   Future<List<FavoriteGuardian>>? _favoriteGuardiansFuture;
 
   Future<List<FavoriteGuardian>> get _favoriteGuardians =>
@@ -55,19 +69,70 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.ridesApiService.addListener(_handleRideLifecycleChange);
     _recentRidesFuture = _loadRecentRides();
+    _recentMonitoredRidesFuture = _loadRecentMonitoredRides();
     _favoriteGuardiansFuture = _loadFavoriteGuardians();
+    _refreshUnreadNotifications();
+    _notificationsRefreshTimer = Timer.periodic(const Duration(seconds: 30), (
+      _,
+    ) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        _refreshUnreadNotifications();
+      }
+    });
   }
 
   @override
   void dispose() {
     widget.ridesApiService.removeListener(_handleRideLifecycleChange);
+    WidgetsBinding.instance.removeObserver(this);
+    _notificationsRefreshTimer?.cancel();
+    _notificationsApiClient.close();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshUnreadNotifications();
+  }
+
+  Future<void> _refreshUnreadNotifications() async {
+    try {
+      final count = await _notificationsApiService.getUnreadCount();
+      if (mounted && count != _unreadNotifications) {
+        setState(() => _unreadNotifications = count);
+      }
+    } catch (_) {
+      // Keep the dashboard usable when the notification endpoint is offline.
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NotificationsScreen(
+          notificationsApiService: _notificationsApiService,
+          onUnreadCountChanged: (count) {
+            if (mounted) setState(() => _unreadNotifications = count);
+          },
+        ),
+      ),
+    );
+    if (mounted) _refreshUnreadNotifications();
   }
 
   Future<List<Ride>> _loadRecentRides() async {
     final result = await widget.ridesApiService.getRides(page: 1, limit: 3);
+    return result.rides;
+  }
+
+  Future<List<Ride>> _loadRecentMonitoredRides() async {
+    final result = await widget.ridesApiService.getGuardianRideHistory(
+      page: 1,
+      limit: 3,
+    );
     return result.rides;
   }
 
@@ -104,15 +169,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _refreshDashboard() async {
     final recentRides = _loadRecentRides();
+    final recentMonitoredRides = _loadRecentMonitoredRides();
     final favoriteGuardians = _loadFavoriteGuardians();
 
     setState(() {
       _recentRidesFuture = recentRides;
+      _recentMonitoredRidesFuture = recentMonitoredRides;
       _favoriteGuardiansFuture = favoriteGuardians;
     });
 
     await Future.wait<void>([
       recentRides.then((_) {}).catchError((Object _) {}),
+      recentMonitoredRides.then((_) {}).catchError((Object _) {}),
       favoriteGuardians.then((_) {}).catchError((Object _) {}),
     ]);
   }
@@ -125,23 +193,29 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _selectedIndex = index);
   }
 
+  void _navigateToRidesTab(int tab) {
+    setState(() {
+      _ridesInitialTab = tab;
+      _ridesNavigationRequest++;
+      _selectedIndex = 1;
+    });
+  }
+
   List<Widget> _buildPages() {
     return [
       _buildDashboard(context),
       RidesScreen(
         ridesApiService: widget.ridesApiService,
         isVisible: _selectedIndex == 1,
+        initialSelectedTab: _ridesInitialTab,
+        selectionRequestId: _ridesNavigationRequest,
       ),
       RideStartScreen(
         isVisible: _selectedIndex == 2,
         ridesApiService: widget.ridesApiService,
       ),
       const GuardiansScreen(),
-      const _PlaceholderPage(
-        icon: Icons.person_outline_rounded,
-        title: 'Your Profile',
-        description: 'Manage your account and app preferences here.',
-      ),
+      const ProfileScreen(),
     ];
   }
 
@@ -199,7 +273,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => _navigateToTab(1),
+                  onPressed: () => _navigateToRidesTab(0),
                   child: const Text(
                     'See all',
                     style: TextStyle(
@@ -214,6 +288,35 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
 
             _buildRecentRidesSection(context),
+
+            const SizedBox(height: 24),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Recent Monitored Rides',
+                  style: textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _navigateToRidesTab(1),
+                  child: const Text(
+                    'See all',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            _buildRecentMonitoredRidesSection(context),
           ],
         ),
       ),
@@ -251,19 +354,20 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-        IconButton(
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Notifications will be available here.'),
-              ),
-            );
-          },
-          tooltip: 'Notifications',
-          icon: Icon(
-            Icons.notifications_none_rounded,
-            size: 28,
-            color: colorScheme.onSurface,
+        Badge(
+          offset: const Offset(-4, 4),
+          isLabelVisible: _unreadNotifications > 0,
+          label: Text(
+            _unreadNotifications > 99 ? '99+' : '$_unreadNotifications',
+          ),
+          child: IconButton(
+            onPressed: _openNotifications,
+            tooltip: 'Notifications',
+            icon: Icon(
+              Icons.notifications_none_rounded,
+              size: 28,
+              color: colorScheme.onSurface,
+            ),
           ),
         ),
         const SizedBox(width: 8),
@@ -468,6 +572,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final photoUrl = guardian.profileImageUrl;
+    final avatarRingColor = guardian.doNotDisturb
+        ? const Color(0xFF8B5CF6)
+        : AppColors.primary;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
@@ -488,7 +595,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.5),
+                    color: avatarRingColor.withValues(alpha: 0.82),
                     width: 2,
                   ),
                 ),
@@ -603,7 +710,105 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildRecentRideCard(BuildContext context, Ride ride) {
+  Widget _buildRecentMonitoredRidesSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return FutureBuilder<List<Ride>>(
+      future: _recentMonitoredRidesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 28),
+            decoration: _cardDecoration(colors),
+            child: const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: _cardDecoration(colors),
+            child: Row(
+              children: [
+                Icon(Icons.cloud_off_outlined, color: colors.onSurfaceVariant),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Could not load monitored rides.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(
+                    () => _recentMonitoredRidesFuture =
+                        _loadRecentMonitoredRides(),
+                  ),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final rides = snapshot.data ?? const <Ride>[];
+        if (rides.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+            decoration: _cardDecoration(colors),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.shield_outlined,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Rides shared with you will appear here.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          children: rides
+              .take(3)
+              .map(
+                (ride) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _buildRecentRideCard(context, ride, monitored: true),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildRecentRideCard(
+    BuildContext context,
+    Ride ride, {
+    bool monitored = false,
+  }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -619,7 +824,9 @@ class _HomeScreenState extends State<HomeScreen> {
       color: colorScheme.surface,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
-        onTap: isActive ? () => _openActiveRide(ride) : () => _navigateToTab(1),
+        onTap: isActive
+            ? () => monitored ? _openMonitoredRide(ride) : _openActiveRide(ride)
+            : () => _navigateToRidesTab(monitored ? 1 : 0),
         borderRadius: BorderRadius.circular(18),
         child: Container(
           padding: const EdgeInsets.all(16),
@@ -636,8 +843,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.primary.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(
-                  Icons.route_rounded,
+                child: Icon(
+                  monitored ? Icons.shield_outlined : Icons.route_rounded,
                   color: AppColors.primary,
                   size: 24,
                 ),
@@ -650,7 +857,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      ride.rideCode,
+                      monitored && ride.riderName != null
+                          ? ride.riderName!
+                          : ride.rideCode,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
@@ -659,6 +868,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 5),
+                    if (monitored) ...[
+                      Text(
+                        'Ride ${ride.rideCode}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
                     Text(
                       _formatRideDate(context, ride.startedAt),
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -796,6 +1016,23 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => ActiveRideScreen(
           ride: ride,
           ridesApiService: widget.ridesApiService,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMonitoredRide(Ride ride) async {
+    if (!ride.isActive) {
+      _navigateToRidesTab(1);
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ActiveRideScreen(
+          ride: ride,
+          ridesApiService: widget.ridesApiService,
+          isGuardian: true,
         ),
       ),
     );
@@ -989,58 +1226,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Temporary Profile placeholder
-// -----------------------------------------------------------------------------
-
-class _PlaceholderPage extends StatelessWidget {
-  const _PlaceholderPage({
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 64, color: AppColors.primary),
-            const SizedBox(height: 20),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              description,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                height: 1.5,
-              ),
-            ),
-          ],
         ),
       ),
     );

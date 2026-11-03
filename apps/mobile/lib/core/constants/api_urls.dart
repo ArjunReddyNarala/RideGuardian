@@ -3,6 +3,16 @@ class ApiUrls {
 
   static const String apiPrefix = '/api/v1';
 
+  static const String currentUser = '$apiPrefix/users/me';
+
+  // In-app notifications.
+  static const String notifications = '$apiPrefix/notifications';
+  static const String notificationUnreadCount = '$notifications/unread-count';
+  static const String notificationReadAll = '$notifications/read-all';
+
+  static String notificationRead(String notificationId) =>
+      '$notifications/$notificationId/read';
+
   // Guardian relationships.
   static const String guardianRelationships =
       '$apiPrefix/guardian-relationships';

@@ -56,7 +56,7 @@
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>RideGuardian uses your location to support ride safety when permitted.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>RideGuardian uses your location to display your live position and support rider safety.</string>
+	<string>RideGuardian uses your location to track your ride details and share it with your guardians.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

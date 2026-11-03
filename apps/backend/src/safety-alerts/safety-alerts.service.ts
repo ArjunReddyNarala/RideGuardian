@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 
 import { SafetyAlert } from './entities/safety-alert.entity.js';
 import { UsersService } from '../users/users.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 @Injectable()
 export class SafetyAlertsService {
@@ -16,14 +17,15 @@ export class SafetyAlertsService {
     private readonly safetyAlertRepository: Repository<SafetyAlert>,
 
     private readonly usersService: UsersService,
+
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
    * Resolve the authenticated Firebase user to our database user.
    */
   private async getDatabaseUser(firebaseUid: string) {
-    const user =
-      await this.usersService.getUserByFirebaseUid(firebaseUid);
+    const user = await this.usersService.getUserByFirebaseUid(firebaseUid);
 
     if (!user) {
       throw new NotFoundException(
@@ -38,14 +40,8 @@ export class SafetyAlertsService {
    * A rider can access their own alerts.
    * A guardian can access only alerts assigned to them.
    */
-  private canAccessAlert(
-    alert: SafetyAlert,
-    userId: string,
-  ): boolean {
-    return (
-      alert.riderId === userId ||
-      alert.guardianId === userId
-    );
+  private canAccessAlert(alert: SafetyAlert, userId: string): boolean {
+    return alert.riderId === userId || alert.guardianId === userId;
   }
 
   /**
@@ -58,10 +54,7 @@ export class SafetyAlertsService {
     const user = await this.getDatabaseUser(firebaseUid);
 
     return this.safetyAlertRepository.find({
-      where: [
-        { riderId: user.id },
-        { guardianId: user.id },
-      ],
+      where: [{ riderId: user.id }, { guardianId: user.id }],
       order: {
         triggeredAt: 'DESC',
       },
@@ -98,10 +91,7 @@ export class SafetyAlertsService {
    *
    * Returns one alert after checking authorization.
    */
-  async getAlertById(
-    firebaseUid: string,
-    alertId: string,
-  ) {
+  async getAlertById(firebaseUid: string, alertId: string) {
     const user = await this.getDatabaseUser(firebaseUid);
 
     const alert = await this.safetyAlertRepository.findOne({
@@ -128,19 +118,11 @@ export class SafetyAlertsService {
    *
    * Marks an active alert as acknowledged.
    */
-  async acknowledgeAlert(
-    firebaseUid: string,
-    alertId: string,
-  ) {
-    const alert = await this.getAlertById(
-      firebaseUid,
-      alertId,
-    );
+  async acknowledgeAlert(firebaseUid: string, alertId: string) {
+    const alert = await this.getAlertById(firebaseUid, alertId);
 
     if (alert.status === 'RESOLVED') {
-      throw new ForbiddenException(
-        'A resolved alert cannot be acknowledged.',
-      );
+      throw new ForbiddenException('A resolved alert cannot be acknowledged.');
     }
 
     if (alert.status === 'ACTIVE') {
@@ -148,6 +130,14 @@ export class SafetyAlertsService {
       alert.acknowledgedAt = new Date();
 
       await this.safetyAlertRepository.save(alert);
+      const actor = await this.getDatabaseUser(firebaseUid);
+      await this.notifyOtherAlertParticipant(
+        alert,
+        actor.id,
+        'ALERT_ACKNOWLEDGED',
+        'Safety alert acknowledged',
+        'acknowledged',
+      );
     }
 
     // Repeated acknowledgement is idempotent.
@@ -159,23 +149,51 @@ export class SafetyAlertsService {
    *
    * Marks an active or acknowledged alert as resolved.
    */
-  async resolveAlert(
-    firebaseUid: string,
-    alertId: string,
-  ) {
-    const alert = await this.getAlertById(
-      firebaseUid,
-      alertId,
-    );
+  async resolveAlert(firebaseUid: string, alertId: string) {
+    const alert = await this.getAlertById(firebaseUid, alertId);
 
     if (alert.status !== 'RESOLVED') {
       alert.status = 'RESOLVED';
       alert.resolvedAt = new Date();
 
       await this.safetyAlertRepository.save(alert);
+      const actor = await this.getDatabaseUser(firebaseUid);
+      await this.notifyOtherAlertParticipant(
+        alert,
+        actor.id,
+        'ALERT_RESOLVED',
+        'Safety alert resolved',
+        'resolved',
+      );
     }
 
     // Repeated resolution is idempotent.
     return alert;
+  }
+
+  private async notifyOtherAlertParticipant(
+    alert: SafetyAlert,
+    actorId: string,
+    type: string,
+    title: string,
+    action: string,
+  ): Promise<void> {
+    const recipientId =
+      alert.riderId === actorId ? alert.guardianId : alert.riderId;
+    if (!recipientId || recipientId === actorId) return;
+
+    const actor = await this.usersService.getUserById(actorId);
+    try {
+      await this.notificationsService.createForUser({
+        userId: recipientId,
+        safetyAlertId: alert.id,
+        type,
+        title,
+        body: `${actor?.name ?? 'A ride participant'} ${action} a safety alert.`,
+        category: 'GENERAL',
+      });
+    } catch (error) {
+      console.error('Could not create safety-alert notification:', error);
+    }
   }
 }

@@ -58,6 +58,7 @@ class RelationshipUser {
     this.email,
     this.phone,
     this.profileImageUrl,
+    this.doNotDisturb = false,
   });
 
   final String id;
@@ -65,6 +66,7 @@ class RelationshipUser {
   final String? email;
   final String? phone;
   final String? profileImageUrl;
+  final bool doNotDisturb;
 
   String get contact => email ?? phone ?? '';
 
@@ -75,6 +77,7 @@ class RelationshipUser {
       email: json['email'] as String?,
       phone: json['phone'] as String?,
       profileImageUrl: json['profileImageUrl'] as String?,
+      doNotDisturb: json['doNotDisturb'] == true,
     );
   }
 }

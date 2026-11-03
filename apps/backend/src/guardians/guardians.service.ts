@@ -43,6 +43,7 @@ export class GuardiansService {
               email: guardian.email,
               phone: guardian.phone,
               profileImageUrl: guardian.profileImageUrl,
+              doNotDisturb: guardian.doNotDisturb,
               relationshipId: relationship.id,
               acceptedAt: relationship.acceptedAt,
             }

@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'node:crypto';
 import { Brackets, DataSource, Repository } from 'typeorm';
 import { GuardianRelationshipsService } from '../guardian-relationships/guardian-relationships.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { GuardianRiderRelationship } from '../guardian-relationships/entities/guardian-rider-relationship.entity.js';
 import { UsersService } from '../users/users.service.js';
 import { Invitation } from './entities/invitation.entity.js';
@@ -39,6 +40,7 @@ export class InvitationsService {
     private readonly usersService: UsersService,
     private readonly guardianRelationshipsService: GuardianRelationshipsService,
     private readonly dataSource: DataSource,
+    private readonly notificationsService: NotificationsService,
   ) {}
   async createInvitation(
     inviterId: string,
@@ -130,6 +132,19 @@ export class InvitationsService {
       acceptedAt: null,
     });
     const saved = await this.invitationRepository.save(invitation);
+    if (recipient) {
+      try {
+        await this.notificationsService.createForUser({
+          userId: recipient.id,
+          type: 'GUARDIAN_INVITATION',
+          title: 'New guardian invitation',
+          body: `${inviter.name} invited you to connect on Ride Guardian.`,
+          category: 'GENERAL',
+        });
+      } catch (error) {
+        console.error('Could not create invitation notification:', error);
+      }
+    }
     // Return the token when creating an invitation.
     return {
       ...this.toResponse(saved),
@@ -306,6 +321,20 @@ export class InvitationsService {
     if (result.expired) {
       throw new BadRequestException('Invitation has expired');
     }
+    try {
+      await this.notificationsService.createForUser({
+        userId: result.invitation.inviterId,
+        type: 'INVITATION_ACCEPTED',
+        title: 'Invitation accepted',
+        body: 'Your guardian invitation was accepted.',
+        category: 'GENERAL',
+      });
+    } catch (error) {
+      console.error(
+        'Could not create invitation-accepted notification:',
+        error,
+      );
+    }
     return result.invitation;
   }
   async declineInvitation(
@@ -338,7 +367,22 @@ export class InvitationsService {
       throw new BadRequestException('Invitation has expired');
     }
     invitation.status = 'DECLINED';
-    return this.toResponse(await this.invitationRepository.save(invitation));
+    const savedInvitation = await this.invitationRepository.save(invitation);
+    try {
+      await this.notificationsService.createForUser({
+        userId: invitation.inviterId,
+        type: 'INVITATION_DECLINED',
+        title: 'Invitation declined',
+        body: 'Your guardian invitation was declined.',
+        category: 'GENERAL',
+      });
+    } catch (error) {
+      console.error(
+        'Could not create invitation-declined notification:',
+        error,
+      );
+    }
+    return this.toResponse(savedInvitation);
   }
   async cancelInvitation(
     invitationId: string,

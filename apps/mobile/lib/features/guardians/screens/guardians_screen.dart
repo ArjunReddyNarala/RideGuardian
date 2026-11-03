@@ -905,6 +905,42 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
   // Rider safety settings
   // ---------------------------------------------------------------------------
 
+  Widget _settingsSectionLabel(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 19, color: AppColors.primary),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall
+              ?.copyWith(fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
+  }
+
+  Widget _settingsSurface(
+    BuildContext context, {
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.all(15),
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: child,
+    );
+  }
+
   Future<void> _showSafetySettings(
     BuildContext context,
     GuardianRelationship relationship,
@@ -927,6 +963,7 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
         isScrollControlled: true,
         useSafeArea: true,
         backgroundColor: Theme.of(context).colorScheme.surface,
+        clipBehavior: Clip.antiAlias,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
@@ -937,190 +974,362 @@ class _GuardiansScreenState extends State<GuardiansScreen> {
               final colors = theme.colorScheme;
 
               return Padding(
-                padding: EdgeInsets.fromLTRB(
-                  22,
-                  22,
-                  22,
-                  MediaQuery.of(context).viewInsets.bottom + 22,
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
                 ),
                 child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Rider safety settings',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'These settings apply to this guardian–rider connection.',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                      TextField(
-                        controller: speedController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Maximum speed (km/h)',
-                          hintText: 'e.g. 80',
-                          helperText:
-                              'Leave empty to remove the configured limit.',
-                          prefixIcon: const Icon(Icons.speed_rounded),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        value: enabled,
-                        activeThumbColor: AppColors.primary,
-                        title: const Text(
-                          'Speed alerts enabled',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: const Text(
-                          'Enable alerts when the rider exceeds the limit.',
-                        ),
-                        onChanged: (value) {
-                          setSheetState(() {
-                            enabled = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Alert cooldown',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<int>(
-                        initialValue: cooldown,
-                        decoration: InputDecoration(
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 30,
-                            child: Text('30 seconds'),
-                          ),
-                          DropdownMenuItem(value: 60, child: Text('1 minute')),
-                          DropdownMenuItem(
-                            value: 120,
-                            child: Text('2 minutes'),
-                          ),
-                          DropdownMenuItem(
-                            value: 300,
-                            child: Text('5 minutes'),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setSheetState(() {
-                              cooldown = value;
-                            });
-                          }
-                        },
-                      ),
-                      if (error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          error!,
-                          style: const TextStyle(color: Colors.redAccent),
-                        ),
-                      ],
-                      const SizedBox(height: 22),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: ElevatedButton(
-                          onPressed: saving
-                              ? null
-                              : () async {
-                                  final text = speedController.text.trim();
-
-                                  final double? speed;
-
-                                  if (text.isEmpty) {
-                                    speed = null;
-                                  } else {
-                                    speed = double.tryParse(text);
-                                  }
-
-                                  if (text.isNotEmpty &&
-                                      (speed == null ||
-                                          speed <= 0 ||
-                                          speed > 999.99)) {
-                                    setSheetState(() {
-                                      error = 'Enter a speed greater than 0 and no more than 999.99 km/h.';
-                                    });
-                                    return;
-                                  }
-
-                                  setSheetState(() {
-                                    saving = true;
-                                    error = null;
-                                  });
-
-                                  try {
-                                    await _api.updateSafetySettings(
-                                      riderId: riderId,
-                                      maxSpeedKmh: speed,
-                                      speedAlertEnabled: enabled,
-                                      speedAlertCooldownSeconds: cooldown,
-                                    );
-
-                                    if (!context.mounted) return;
-
-                                    Navigator.of(context).pop();
-
-                                    _showMessage('Safety settings updated.');
-
-                                    await _loadData();
-                                  } catch (exception) {
-                                    if (!context.mounted) return;
-
-                                    setSheetState(() {
-                                      saving = false;
-                                      error = _errorText(exception);
-                                    });
-                                  }
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 12, 22, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 42,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: colors.outlineVariant,
+                              borderRadius: BorderRadius.circular(4),
                             ),
                           ),
-                          child: saving
-                              ? const SizedBox(
-                                  height: 21,
-                                  width: 21,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text(
-                                  'Save settings',
-                                  style: TextStyle(fontWeight: FontWeight.w800),
-                                ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 24),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(
+                                  alpha: 0.13,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              child: const Icon(
+                                Icons.shield_rounded,
+                                color: AppColors.primary,
+                                size: 25,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Rider safety settings',
+                                    style: theme.textTheme.headlineSmall
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: -0.4,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    'For ${relationship.rider?.name ?? 'your rider'}',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        _settingsSectionLabel(
+                          context,
+                          icon: Icons.speed_rounded,
+                          title: 'Speed limit',
+                        ),
+                        const SizedBox(height: 10),
+                        _settingsSurface(
+                          context,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              TextField(
+                                controller: speedController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText: 'Maximum speed',
+                                  suffixText: 'km/h',
+                                  hintText: 'e.g. 80',
+                                  prefixIcon: const Icon(
+                                    Icons.speed_rounded,
+                                    color: AppColors.primary,
+                                  ),
+                                  filled: true,
+                                  fillColor: colors.surface,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(15),
+                                    borderSide: BorderSide(
+                                      color: colors.outlineVariant,
+                                    ),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(15),
+                                    borderSide: BorderSide(
+                                      color: colors.outlineVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 9),
+                              Text(
+                                'Leave empty to remove the speed limit.',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        _settingsSurface(
+                          context,
+                          padding: const EdgeInsets.fromLTRB(15, 7, 8, 7),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: AppColors.warning.withValues(
+                                    alpha: 0.14,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.notifications_active_outlined,
+                                  color: AppColors.warning,
+                                  size: 21,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Speed alerts',
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      'Notify you when the limit is exceeded.',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: colors.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch.adaptive(
+                                value: enabled,
+                                activeTrackColor: AppColors.primary,
+                                onChanged: (value) {
+                                  setSheetState(() => enabled = value);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        _settingsSectionLabel(
+                          context,
+                          icon: Icons.timer_outlined,
+                          title: 'Alert cooldown',
+                        ),
+                        const SizedBox(height: 10),
+                        _settingsSurface(
+                          context,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              DropdownButtonFormField<int>(
+                                initialValue: cooldown,
+                                decoration: InputDecoration(
+                                  labelText: 'Repeat alert after',
+                                  prefixIcon: const Icon(
+                                    Icons.timer_outlined,
+                                    color: AppColors.primary,
+                                  ),
+                                  filled: true,
+                                  fillColor: colors.surface,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(15),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(15),
+                                    borderSide: BorderSide(
+                                      color: colors.outlineVariant,
+                                    ),
+                                  ),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 30,
+                                    child: Text('30 seconds'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 60,
+                                    child: Text('1 minute'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 120,
+                                    child: Text('2 minutes'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 300,
+                                    child: Text('5 minutes'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    setSheetState(() => cooldown = value);
+                                  }
+                                },
+                              ),
+                              const SizedBox(height: 11),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.info_outline_rounded,
+                                    size: 17,
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Prevents repeated alerts while speeding continues. A shorter cooldown gives you more frequent updates.',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: colors.onSurfaceVariant,
+                                            height: 1.35,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (error != null) ...[
+                          const SizedBox(height: 14),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(13),
+                            decoration: BoxDecoration(
+                              color: AppColors.danger.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(13),
+                              border: Border.all(
+                                color: AppColors.danger.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Text(
+                              error!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppColors.danger,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 22),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: FilledButton.icon(
+                            onPressed: saving
+                                ? null
+                                : () async {
+                                    final text = speedController.text.trim();
+
+                                    final double? speed;
+
+                                    if (text.isEmpty) {
+                                      speed = null;
+                                    } else {
+                                      speed = double.tryParse(text);
+                                    }
+
+                                    if (text.isNotEmpty &&
+                                        (speed == null ||
+                                            speed <= 0 ||
+                                            speed > 999.99)) {
+                                      setSheetState(() {
+                                        error = 'Enter a speed greater than 0 and no more than 999.99 km/h.';
+                                      });
+                                      return;
+                                    }
+
+                                    setSheetState(() {
+                                      saving = true;
+                                      error = null;
+                                    });
+
+                                    try {
+                                      await _api.updateSafetySettings(
+                                        riderId: riderId,
+                                        maxSpeedKmh: speed,
+                                        speedAlertEnabled: enabled,
+                                        speedAlertCooldownSeconds: cooldown,
+                                      );
+
+                                      if (!context.mounted) return;
+
+                                      Navigator.of(context).pop();
+
+                                      _showMessage('Safety settings updated.');
+
+                                      await _loadData();
+                                    } catch (exception) {
+                                      if (!context.mounted) return;
+
+                                      setSheetState(() {
+                                        saving = false;
+                                        error = _errorText(exception);
+                                      });
+                                    }
+                                  },
+                            icon: saving
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.check_rounded),
+                            label: Text(
+                              saving ? 'Saving…' : 'Save settings',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
