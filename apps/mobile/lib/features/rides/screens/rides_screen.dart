@@ -675,7 +675,7 @@ class _RidesScreenState extends State<RidesScreen> {
                   const SizedBox(height: 8),
                 ],
                 Text(
-                  ride.rideCode,
+                  ride.displayLabel,
                   style: Theme.of(context).textTheme.titleLarge
                       ?.copyWith(fontWeight: FontWeight.w800),
                 ),
@@ -764,7 +764,7 @@ class _RidesScreenState extends State<RidesScreen> {
           ],
           const SizedBox(height: 12),
           Text(
-            ride.rideCode,
+            ride.displayLabel,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(fontWeight: FontWeight.w800),
           ),

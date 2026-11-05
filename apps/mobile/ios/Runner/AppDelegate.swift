@@ -17,5 +17,20 @@ import GoogleMaps
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    let batteryChannel = FlutterMethodChannel(
+      name: "rideguardian/device_battery",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    batteryChannel.setMethodCallHandler { call, result in
+      guard call.method == "getBatteryLevel" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+
+      UIDevice.current.isBatteryMonitoringEnabled = true
+      let batteryLevel = UIDevice.current.batteryLevel
+      result(batteryLevel < 0 ? nil : Int(batteryLevel * 100))
+    }
   }
 }

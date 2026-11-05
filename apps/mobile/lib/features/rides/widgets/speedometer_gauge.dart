@@ -23,91 +23,180 @@ class SpeedometerGauge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final targetSpeed = isSpeedAvailable ? speedKmh : 0.0;
+    final isOverLimit = speedLimitKmh != null && speedKmh > speedLimitKmh!;
+    final accent = isOverLimit ? AppColors.danger : AppColors.primary;
 
-    return Column(
-      children: [
-        SizedBox(
-          height: 238,
-          width: double.infinity,
-          child: TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 0, end: targetSpeed),
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
-            builder: (context, animatedSpeed, _) {
-              final isOverLimit =
-                  speedLimitKmh != null && animatedSpeed > speedLimitKmh!;
-              final activeColor = isOverLimit
-                  ? AppColors.danger
-                  : AppColors.primary;
-
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  CustomPaint(
-                    painter: _SpeedometerPainter(
-                      speedKmh: animatedSpeed,
-                      maximumSpeed: _maximumSpeed,
-                      speedLimitKmh: speedLimitKmh,
-                      activeColor: activeColor,
-                    ),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 17, 18, 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF17231F), Color(0xFF0B1210)],
+        ),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: const Color(0xFF34463E), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.speed_rounded, color: accent, size: 21),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  isRider ? 'RIDER SPEED' : 'LIVE RIDER SPEED',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: const Color(0xFFDDE8E2),
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.35,
                   ),
-                  Positioned(
-                    top: 78,
-                    left: 42,
-                    right: 42,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'km/h',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                            letterSpacing: 1.1,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 120),
-                          child: Text(
-                            isSpeedAvailable
-                                ? speedKmh.toStringAsFixed(2)
-                                : '—',
-                            key: ValueKey(
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          SizedBox(
+            height: 204,
+            width: double.infinity,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: speedKmh),
+              duration: const Duration(milliseconds: 420),
+              curve: Curves.easeOutCubic,
+              builder: (context, animatedSpeed, _) {
+                final overLimit =
+                    speedLimitKmh != null && animatedSpeed > speedLimitKmh!;
+                final activeColor = overLimit
+                    ? AppColors.danger
+                    : AppColors.primary;
+
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CustomPaint(
+                      painter: _RacingGaugePainter(
+                        speedKmh: isSpeedAvailable ? animatedSpeed : 0,
+                        maximumSpeed: _maximumSpeed,
+                        speedLimitKmh: speedLimitKmh,
+                        activeColor: activeColor,
+                      ),
+                    ),
+                    Positioned(
+                      top: 72,
+                      left: 30,
+                      right: 30,
+                      child: Column(
+                        children: [
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 180),
+                            child: Text(
                               isSpeedAvailable
-                                  ? speedKmh.toStringAsFixed(2)
-                                  : 'unavailable',
-                            ),
-                            maxLines: 1,
-                            style: theme.textTheme.displayLarge?.copyWith(
-                              color: colors.onSurface,
-                              fontSize: 46,
-                              height: 1,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: -1.8,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
+                                  ? speedKmh.toStringAsFixed(0)
+                                  : '—',
+                              key: ValueKey(
+                                isSpeedAvailable
+                                    ? speedKmh.toStringAsFixed(0)
+                                    : 'no-gps',
+                              ),
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: isSpeedAvailable ? 68 : 40,
+                                height: 0.98,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: isSpeedAvailable ? -3.2 : 0,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                                shadows: const [
+                                  Shadow(
+                                    color: Colors.black54,
+                                    blurRadius: 15,
+                                    offset: Offset(0, 3),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 1),
+                          const Text(
+                            'km/h',
+                            style: TextStyle(
+                              color: Color(0xFF9FB0A7),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 2.3,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              );
-            },
+                  ],
+                );
+              },
+            ),
+          ),
+          Row(
+            children: [
+              _RangeLabel(value: '0', caption: 'MIN'),
+              const Spacer(),
+              if (speedLimitKmh != null)
+                _SpeedLimitPill(speedLimitKmh: speedLimitKmh!),
+              const Spacer(),
+              _RangeLabel(value: '240', caption: 'MAX'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RangeLabel extends StatelessWidget {
+  const _RangeLabel({required this.value, required this.caption});
+
+  final String value;
+  final String caption;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            color: Color(0xFFE9F1EC),
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            fontFeatures: [FontFeature.tabularFigures()],
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(width: 5),
         Text(
-          isRider ? 'Current Speed' : 'Rider Speed',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: colors.onSurface,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.1,
+          caption,
+          style: const TextStyle(
+            color: Color(0xFF788A80),
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1,
           ),
         ),
       ],
@@ -115,8 +204,35 @@ class SpeedometerGauge extends StatelessWidget {
   }
 }
 
-class _SpeedometerPainter extends CustomPainter {
-  const _SpeedometerPainter({
+class _SpeedLimitPill extends StatelessWidget {
+  const _SpeedLimitPill({required this.speedLimitKmh});
+
+  final double speedLimitKmh;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        'LIMIT ${speedLimitKmh.toStringAsFixed(0)}',
+        style: const TextStyle(
+          color: AppColors.warning,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
+class _RacingGaugePainter extends CustomPainter {
+  const _RacingGaugePainter({
     required this.speedKmh,
     required this.maximumSpeed,
     required this.speedLimitKmh,
@@ -133,35 +249,24 @@ class _SpeedometerPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height * 0.52);
-    final radius = math.min(size.width * 0.46, size.height * 0.505);
+    final center = Offset(size.width / 2, size.height * 0.51);
+    final radius = math.min(size.width * 0.39, size.height * 0.49);
     final bounds = Rect.fromCircle(center: center, radius: radius);
     final ratio = (speedKmh / maximumSpeed).clamp(0.0, 1.0);
 
-    // The subdued track remains unlit; the colored arc represents measured
-    // speed and changes to the danger palette only after the configured limit.
     canvas.drawArc(
       bounds,
       _startAngle,
       _sweepAngle,
       false,
       Paint()
-        ..color = const Color(0xFF111A17)
+        ..color = const Color(0xFF35463E)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 34
-        ..strokeCap = StrokeCap.butt,
+        ..strokeWidth = 13
+        ..strokeCap = StrokeCap.round,
     );
 
-    canvas.drawArc(
-      bounds,
-      _startAngle,
-      _sweepAngle,
-      false,
-      Paint()
-        ..color = const Color(0xFF52605A).withValues(alpha: 0.7)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.2,
-    );
+    _drawTicks(canvas, center, radius, ratio);
 
     if (ratio > 0) {
       final activeSweep = _sweepAngle * ratio;
@@ -171,10 +276,10 @@ class _SpeedometerPainter extends CustomPainter {
         activeSweep,
         false,
         Paint()
-          ..color = activeColor.withValues(alpha: 0.36)
+          ..color = activeColor.withValues(alpha: 0.35)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 42
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+          ..strokeWidth = 24
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
       );
       canvas.drawArc(
         bounds,
@@ -184,152 +289,77 @@ class _SpeedometerPainter extends CustomPainter {
         Paint()
           ..shader = SweepGradient(
             startAngle: _startAngle,
-            endAngle: _startAngle + 2 * math.pi,
+            endAngle: _startAngle + _sweepAngle,
             colors: [
-              activeColor.withValues(alpha: 0.68),
+              activeColor.withValues(alpha: 0.62),
               activeColor,
-              Color.lerp(activeColor, Colors.white, 0.48)!,
+              Color.lerp(activeColor, Colors.white, 0.35)!,
             ],
-            stops: const [0, 0.78, 1],
+            stops: const [0, 0.72, 1],
           ).createShader(bounds)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 29
-          ..strokeCap = StrokeCap.butt,
+          ..strokeWidth = 10
+          ..strokeCap = StrokeCap.round,
       );
-      canvas.drawArc(
-        bounds.deflate(2.8),
-        _startAngle,
-        activeSweep,
-        false,
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.18)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2,
-      );
-    }
 
-    _drawTicks(canvas, center, radius, ratio);
-    _drawEndpointLabels(canvas, center, radius);
+      final angle = _startAngle + activeSweep;
+      final needleStart = _point(center, radius - 26, angle);
+      final needleEnd = _point(center, radius + 4, angle);
+      canvas.drawLine(
+        needleStart,
+        needleEnd,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.94)
+          ..strokeWidth = 2.4
+          ..strokeCap = StrokeCap.round,
+      );
+      canvas.drawCircle(needleEnd, 4, Paint()..color = activeColor);
+    }
 
     if (speedLimitKmh != null && speedLimitKmh! <= maximumSpeed) {
       final limitRatio = (speedLimitKmh! / maximumSpeed).clamp(0.0, 1.0);
-      final limitAngle = _startAngle + _sweepAngle * limitRatio;
-      _drawDialMarker(
-        canvas,
-        center,
-        radius,
-        limitAngle,
-        AppColors.warning,
-        width: 3.5,
-        innerOffset: 3,
-        outerOffset: 7,
-      );
-    }
-
-    final speedAngle = _startAngle + _sweepAngle * ratio;
-    _drawDialMarker(
-      canvas,
-      center,
-      radius,
-      speedAngle,
-      Colors.white,
-      width: 5,
-      innerOffset: 1,
-      outerOffset: 5,
-    );
-  }
-
-  void _drawTicks(Canvas canvas, Offset center, double radius, double ratio) {
-    const divisions = 12;
-    for (var index = 0; index <= divisions; index++) {
-      final tickRatio = index / divisions;
-      final angle = _startAngle + _sweepAngle * tickRatio;
-      final isMajor = index % 3 == 0;
-      final tickColor = tickRatio <= ratio
-          ? Colors.black.withValues(alpha: 0.84)
-          : Colors.white.withValues(alpha: 0.62);
-
+      final angle = _startAngle + _sweepAngle * limitRatio;
       canvas.drawLine(
-        _point(center, radius - (isMajor ? 43 : 33), angle),
-        _point(center, radius - 4, angle),
+        _point(center, radius - 17, angle),
+        _point(center, radius + 8, angle),
         Paint()
-          ..color = tickColor
-          ..strokeWidth = isMajor ? 2.2 : 1.4
+          ..color = AppColors.warning
+          ..strokeWidth = 2.5
           ..strokeCap = StrokeCap.round,
       );
     }
   }
 
-  void _drawEndpointLabels(Canvas canvas, Offset center, double radius) {
-    _drawLabel(
-      canvas,
-      '0',
-      _point(center, radius - 15, _startAngle),
-      Colors.white,
-    );
-    _drawLabel(
-      canvas,
-      maximumSpeed.toStringAsFixed(0),
-      _point(center, radius - 15, _startAngle + _sweepAngle),
-      Colors.white,
-    );
+  void _drawTicks(Canvas canvas, Offset center, double radius, double ratio) {
+    const divisions = 24;
+    for (var index = 0; index <= divisions; index++) {
+      final tickRatio = index / divisions;
+      final angle = _startAngle + _sweepAngle * tickRatio;
+      final isMajor = index % 3 == 0;
+      final passed = tickRatio <= ratio;
+      final color = passed
+          ? activeColor.withValues(alpha: 0.90)
+          : Colors.white.withValues(alpha: isMajor ? 0.52 : 0.20);
+      canvas.drawLine(
+        _point(center, radius - (isMajor ? 18 : 13), angle),
+        _point(center, radius - 3, angle),
+        Paint()
+          ..color = color
+          ..strokeWidth = isMajor ? 2.2 : 1.2
+          ..strokeCap = StrokeCap.round,
+      );
+    }
   }
 
-  void _drawDialMarker(
-    Canvas canvas,
-    Offset center,
-    double radius,
-    double angle,
-    Color color, {
-    required double width,
-    required double innerOffset,
-    required double outerOffset,
-  }) {
-    canvas.drawLine(
-      _point(center, radius - 36 - innerOffset, angle),
-      _point(center, radius + outerOffset, angle),
-      Paint()
-        ..color = color
-        ..strokeWidth = width
-        ..strokeCap = StrokeCap.round,
-    );
-  }
-
-  Offset _point(Offset center, double radius, double angle) {
-    return Offset(
-      center.dx + radius * math.cos(angle),
-      center.dy + radius * math.sin(angle),
-    );
-  }
-
-  void _drawLabel(Canvas canvas, String label, Offset position, Color color) {
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: TextStyle(
-          color: color,
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
-          fontFeatures: const [FontFeature.tabularFigures()],
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-
-    textPainter.paint(
-      canvas,
-      Offset(
-        position.dx - textPainter.width / 2,
-        position.dy - textPainter.height / 2,
-      ),
-    );
-  }
+  Offset _point(Offset center, double radius, double angle) => Offset(
+    center.dx + radius * math.cos(angle),
+    center.dy + radius * math.sin(angle),
+  );
 
   @override
-  bool shouldRepaint(covariant _SpeedometerPainter oldDelegate) {
-    return speedKmh != oldDelegate.speedKmh ||
-        maximumSpeed != oldDelegate.maximumSpeed ||
-        speedLimitKmh != oldDelegate.speedLimitKmh ||
-        activeColor != oldDelegate.activeColor;
-  }
+  bool shouldRepaint(covariant _RacingGaugePainter oldDelegate) =>
+      speedKmh != oldDelegate.speedKmh ||
+      maximumSpeed != oldDelegate.maximumSpeed ||
+      speedLimitKmh != oldDelegate.speedLimitKmh ||
+      activeColor != oldDelegate.activeColor;
 }

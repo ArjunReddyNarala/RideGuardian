@@ -20,15 +20,20 @@ class GuardiansSummaryCard extends StatelessWidget {
     final colors = theme.colorScheme;
 
     return Container(
-      padding: const EdgeInsets.all(19),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [const Color(0xFF18372B), colors.surfaceContainerHighest],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.22)),
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: colors.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: theme.brightness == Brightness.dark ? 0.12 : 0.045,
+            ),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -36,61 +41,71 @@ class GuardiansSummaryCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(14),
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(15),
                 ),
                 child: const Icon(
-                  Icons.groups_rounded,
+                  Icons.diversity_3_rounded,
                   color: AppColors.primary,
-                  size: 24,
+                  size: 25,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 13),
               Expanded(
-                child: Text(
-                  'Your trusted circle',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: colors.onSurface,
-                    fontWeight: FontWeight.w800,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your trusted circle',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'People connected to your ride safety',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              if (pendingRequestsCount > 0)
+              if (pendingRequestsCount > 0) ...[
+                const SizedBox(width: 8),
                 _CountBadge(count: pendingRequestsCount),
+              ],
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 18),
           Row(
             children: [
               Expanded(
                 child: _SummaryMetric(
                   value: myGuardiansCount,
                   label: 'My guardians',
+                  icon: Icons.shield_outlined,
                 ),
               ),
-              Container(
-                width: 1,
-                height: 42,
-                color: colors.outlineVariant.withValues(alpha: 0.7),
-              ),
+              const SizedBox(width: 9),
               Expanded(
                 child: _SummaryMetric(
                   value: peopleIMonitorCount,
-                  label: 'People I monitor',
+                  label: 'I monitor',
+                  icon: Icons.remove_red_eye_outlined,
                 ),
               ),
-              Container(
-                width: 1,
-                height: 42,
-                color: colors.outlineVariant.withValues(alpha: 0.7),
-              ),
+              const SizedBox(width: 9),
               Expanded(
                 child: _SummaryMetric(
                   value: pendingRequestsCount,
                   label: 'Requests',
+                  icon: Icons.inbox_outlined,
+                  emphasize: pendingRequestsCount > 0,
                 ),
               ),
             ],
@@ -104,33 +119,65 @@ class GuardiansSummaryCard extends StatelessWidget {
 class _SummaryMetric extends StatelessWidget {
   final int value;
   final String label;
+  final IconData icon;
+  final bool emphasize;
 
-  const _SummaryMetric({required this.value, required this.label});
+  const _SummaryMetric({
+    required this.value,
+    required this.label,
+    required this.icon,
+    this.emphasize = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final accent = emphasize ? AppColors.primary : colors.onSurfaceVariant;
 
-    return Column(
-      children: [
-        Text(
-          '$value',
-          style: theme.textTheme.headlineSmall?.copyWith(
-            color: colors.onSurface,
-            fontWeight: FontWeight.w800,
-          ),
+    return Container(
+      constraints: const BoxConstraints(minHeight: 91),
+      padding: const EdgeInsets.fromLTRB(11, 12, 8, 10),
+      decoration: BoxDecoration(
+        color: emphasize
+            ? AppColors.primary.withValues(alpha: 0.09)
+            : colors.surfaceContainerHighest.withValues(alpha: 0.58),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: emphasize
+              ? AppColors.primary.withValues(alpha: 0.22)
+              : colors.outlineVariant.withValues(alpha: 0.72),
         ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: colors.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: accent),
+              const SizedBox(width: 6),
+              Text(
+                '$value',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: emphasize ? AppColors.primary : colors.onSurface,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+              ),
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 9),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -143,18 +190,30 @@ class _CountBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(20),
+        color: AppColors.primary.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.24)),
       ),
-      child: Text(
-        '$count new',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.mark_email_unread_outlined,
+            size: 14,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '$count new',
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }

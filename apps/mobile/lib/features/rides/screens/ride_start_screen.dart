@@ -530,7 +530,7 @@ class _RideStartScreenState extends State<RideStartScreen>
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    ride.rideCode,
+                    ride.displayLabel,
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),

@@ -450,8 +450,8 @@ class _GuardianActiveRideScreenState
           ),
           const SizedBox(height: 16),
           _infoCard(
-            'Ride code',
-            widget.ride.rideCode,
+            'Ride date',
+            widget.ride.displayLabel,
             Icons.shield_outlined,
             colors,
           ),

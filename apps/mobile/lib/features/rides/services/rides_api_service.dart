@@ -6,6 +6,7 @@ import '../../../core/network/api_client.dart';
 import '../models/ride.dart';
 import '../models/paginated_rides.dart';
 import '../models/favorite_guardian.dart';
+import '../models/ride_guardian.dart';
 import '../models/start_ride_request.dart';
 
 enum RideLifecycleChange { started, ended }
@@ -56,6 +57,21 @@ class RidesApiService extends ChangeNotifier {
       ApiUrls.addRideGuardian(rideId),
       body: {'guardianId': guardianId},
     );
+  }
+
+  Future<List<RideGuardian>> getRideGuardians(String rideId) async {
+    final response = await _apiClient.get(ApiUrls.rideGuardians(rideId));
+    dynamic data = response;
+    if (data is Map<String, dynamic> && data.containsKey('data')) {
+      data = data['data'];
+    }
+    if (data is! List) {
+      throw const FormatException('Invalid ride guardians response.');
+    }
+    return data
+        .whereType<Map>()
+        .map((item) => RideGuardian.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
   }
 
   Future<void> endRide(String rideId) async {

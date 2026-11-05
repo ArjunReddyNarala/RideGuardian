@@ -1,3 +1,5 @@
+import '../../../core/utils/india_time.dart';
+
 class Ride {
   const Ride({
     required this.id,
@@ -23,6 +25,26 @@ class Ride {
 
   bool get isCompleted => status.toUpperCase() == 'COMPLETED';
 
+  /// Human-readable ride label for UI. The ride code remains an internal key.
+  String get displayLabel {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final date = toIndiaStandardTime(startedAt);
+    return 'Ride on ${date.day} ${months[date.month - 1]}';
+  }
+
   factory Ride.fromJson(Map<String, dynamic> json) {
     return Ride(
       id: _requiredString(json, 'id'),
@@ -36,31 +58,21 @@ class Ride {
     );
   }
 
-  static String _requiredString(
-    Map<String, dynamic> json,
-    String key,
-  ) {
+  static String _requiredString(Map<String, dynamic> json, String key) {
     final value = json[key];
 
     if (value is! String || value.trim().isEmpty) {
-      throw FormatException(
-        'Invalid or missing ride field: $key',
-      );
+      throw FormatException('Invalid or missing ride field: $key');
     }
 
     return value;
   }
 
-  static DateTime _requiredDate(
-    Map<String, dynamic> json,
-    String key,
-  ) {
+  static DateTime _requiredDate(Map<String, dynamic> json, String key) {
     final date = _optionalDate(json[key]);
 
     if (date == null) {
-      throw FormatException(
-        'Invalid or missing ride date: $key',
-      );
+      throw FormatException('Invalid or missing ride date: $key');
     }
 
     return date;

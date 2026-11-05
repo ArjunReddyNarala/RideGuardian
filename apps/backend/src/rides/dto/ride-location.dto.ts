@@ -35,6 +35,12 @@ export class RideLocationDto {
   headingDegrees?: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  batteryLevel?: number;
+
+  @IsOptional()
   @IsDateString()
   recordedAt?: string;
 }

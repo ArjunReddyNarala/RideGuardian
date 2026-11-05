@@ -213,18 +213,16 @@ export class RideTrackingGateway implements OnModuleInit, OnModuleDestroy {
 
       // Deliver the GPS fix to rider and guardians immediately. Database writes
       // and speed-alert work can take much longer than the websocket hop.
-      this.broadcast(client.rideId, {
-        type: 'LOCATION_UPDATE',
-        data: {
-          rideId: client.rideId,
-          latitude: dto.latitude,
-          longitude: dto.longitude,
-          speedKmh: dto.speedKmh ?? null,
-          speedAccuracyKmh: dto.speedAccuracyKmh ?? null,
-          accuracyMeters: dto.accuracyMeters ?? null,
-          headingDegrees: dto.headingDegrees ?? null,
-          recordedAt: dto.recordedAt ?? new Date().toISOString(),
-        },
+      this.broadcastLocationUpdate(client.rideId, {
+        rideId: client.rideId,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        speedKmh: dto.speedKmh ?? null,
+        speedAccuracyKmh: dto.speedAccuracyKmh ?? null,
+        accuracyMeters: dto.accuracyMeters ?? null,
+        headingDegrees: dto.headingDegrees ?? null,
+        batteryLevel: dto.batteryLevel ?? null,
+        recordedAt: dto.recordedAt ?? new Date().toISOString(),
       });
 
       this.send(client.socket, {
@@ -305,6 +303,9 @@ export class RideTrackingGateway implements OnModuleInit, OnModuleDestroy {
         ? undefined
         : Number(value.speedAccuracyKmh);
 
+    const batteryLevel =
+      value.batteryLevel == null ? undefined : Number(value.batteryLevel);
+
     const recordedAt =
       value.recordedAt == null ? undefined : String(value.recordedAt);
 
@@ -337,6 +338,15 @@ export class RideTrackingGateway implements OnModuleInit, OnModuleDestroy {
       throw new Error('Invalid heading');
     }
 
+    if (
+      batteryLevel !== undefined &&
+      (!Number.isInteger(batteryLevel) ||
+        batteryLevel < 0 ||
+        batteryLevel > 100)
+    ) {
+      throw new Error('Invalid battery level');
+    }
+
     return {
       latitude,
       longitude,
@@ -344,8 +354,29 @@ export class RideTrackingGateway implements OnModuleInit, OnModuleDestroy {
       speedAccuracyKmh,
       accuracyMeters,
       headingDegrees,
+      batteryLevel,
       recordedAt,
     };
+  }
+
+  private broadcastLocationUpdate(
+    rideId: string,
+    data: Record<string, unknown>,
+  ) {
+    const riderData = { ...data };
+    delete riderData.batteryLevel;
+
+    for (const client of this.clients) {
+      if (
+        client.rideId === rideId &&
+        client.socket.readyState === WebSocket.OPEN
+      ) {
+        this.send(client.socket, {
+          type: 'LOCATION_UPDATE',
+          data: client.role === 'GUARDIAN' ? data : riderData,
+        });
+      }
+    }
   }
 
   broadcast(rideId: string, message: object) {

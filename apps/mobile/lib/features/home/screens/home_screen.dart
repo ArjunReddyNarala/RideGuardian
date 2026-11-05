@@ -859,7 +859,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     Text(
                       monitored && ride.riderName != null
                           ? ride.riderName!
-                          : ride.rideCode,
+                          : ride.displayLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
@@ -870,7 +870,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     const SizedBox(height: 5),
                     if (monitored) ...[
                       Text(
-                        'Ride ${ride.rideCode}',
+                        ride.displayLabel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(

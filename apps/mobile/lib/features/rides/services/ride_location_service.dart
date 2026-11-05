@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../../websocket/websocket_events.dart';
+import 'device_battery_service.dart';
 import '../models/gps_speed_reading.dart';
 
 class RideLocationService {
@@ -21,7 +22,12 @@ class RideLocationService {
   WebSocketChannel? _channel;
 
   Timer? _reconnectTimer;
+  Timer? _batteryRefreshTimer;
   Position? _latestPosition;
+  int? _batteryLevel;
+  DateTime? _lastBatteryRefreshAt;
+  bool _isRefreshingBattery = false;
+  final DeviceBatteryService _batteryService = DeviceBatteryService();
   String? _rideId;
   String? _backendBaseUrl;
   bool _isGuardianConnection = false;
@@ -64,6 +70,7 @@ class RideLocationService {
     _backendBaseUrl = backendBaseUrl;
     _isGuardianConnection = false;
     _shouldReconnect = true;
+    _startBatteryMonitoring();
 
     await _connect(rideId: rideId, backendBaseUrl: backendBaseUrl);
 
@@ -221,6 +228,12 @@ class RideLocationService {
       return;
     }
     _latestPosition = position;
+    final lastBatteryRefresh = _lastBatteryRefreshAt;
+    if (lastBatteryRefresh == null ||
+        DateTime.now().difference(lastBatteryRefresh) >=
+            const Duration(seconds: 30)) {
+      unawaited(_refreshBatteryLevel());
+    }
     final channel = _channel;
 
     if (channel == null || !_isConnected) return;
@@ -240,11 +253,32 @@ class RideLocationService {
         'headingDegrees': position.hasHeading && position.heading >= 0
             ? position.heading
             : null,
+        'batteryLevel': _batteryLevel,
         'recordedAt': position.timestamp.toUtc().toIso8601String(),
       },
     );
 
     channel.sink.add(message.encode());
+  }
+
+  void _startBatteryMonitoring() {
+    _batteryRefreshTimer?.cancel();
+    unawaited(_refreshBatteryLevel());
+    _batteryRefreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(_refreshBatteryLevel()),
+    );
+  }
+
+  Future<void> _refreshBatteryLevel() async {
+    if (_isRefreshingBattery) return;
+    _isRefreshingBattery = true;
+    _lastBatteryRefreshAt = DateTime.now();
+    try {
+      _batteryLevel = await _batteryService.getLevel();
+    } finally {
+      _isRefreshingBattery = false;
+    }
   }
 
   void _scheduleReconnect() {
@@ -294,6 +328,8 @@ class RideLocationService {
     _shouldReconnect = false;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
+    _batteryRefreshTimer?.cancel();
+    _batteryRefreshTimer = null;
     await _positionSubscription?.cancel();
 
     _positionSubscription = null;
@@ -311,6 +347,8 @@ class RideLocationService {
     _rideId = null;
     _backendBaseUrl = null;
     _latestPosition = null;
+    _batteryLevel = null;
+    _lastBatteryRefreshAt = null;
   }
 
   /// Stops only the guardian's receive-only connection.
