@@ -176,7 +176,7 @@ export class RidesService {
       await this.notificationsService.createForUsers(guardianIds, {
         type: 'RIDE_STARTED',
         title: 'A ride has started',
-        body: `${rider.name} started ride ${createdRide.rideCode}. You can monitor it in Ride Guardian.`,
+        body: `${rider.name} started a ride. You can monitor it in Ride Guardian.`,
         category: 'RIDE',
       });
     } catch (error) {
@@ -504,6 +504,14 @@ export class RidesService {
       );
     }
 
+    try {
+      // Save the last fresh point so a completed route ends at the rider's
+      // final location even when the last 250 m checkpoint was earlier.
+      await this.rideTrackingGateway.persistRideEndLocation(rideId);
+    } catch (error) {
+      console.error('Could not save final ride location:', error);
+    }
+
     ride.status = 'COMPLETED';
     ride.endedAt = new Date();
 
@@ -512,15 +520,23 @@ export class RidesService {
     const assignments = await this.dataSource.getRepository(RideGuardian).find({
       where: { rideId, removedAt: IsNull() },
     });
-    const recipientIds = [
-      riderId,
-      ...assignments.map((item) => item.guardianId),
-    ];
+    const guardianIds = assignments.map((item) => item.guardianId);
     try {
-      await this.notificationsService.createForUsers(recipientIds, {
+      const rider = await this.usersService.getUserById(riderId);
+      const riderName = rider?.name?.trim() || 'The rider';
+
+      await this.notificationsService.createForUser({
+        userId: riderId,
         type: 'RIDE_ENDED',
         title: 'Ride completed',
-        body: `Ride ${ride.rideCode} has ended.`,
+        body: 'Your ride has ended. View its summary in Ride Guardian.',
+        category: 'RIDE',
+      });
+
+      await this.notificationsService.createForUsers(guardianIds, {
+        type: 'RIDE_ENDED',
+        title: 'Ride completed',
+        body: `${riderName}'s ride has ended. View its summary in Ride Guardian.`,
         category: 'RIDE',
       });
     } catch (error) {
@@ -554,13 +570,12 @@ export class RidesService {
         durationSeconds: this.calculateDuration(ride.startedAt, ride.endedAt),
         distanceKm: 0,
         averageSpeedKmh: 0,
-        maxSpeedKmh: 0,
+        maxSpeedKmh: null,
         locationCount: 0,
       };
     }
 
     let distanceKm = 0;
-    let totalSpeed = 0;
     let speedCount = 0;
     let maxSpeedKmh = 0;
 
@@ -568,7 +583,6 @@ export class RidesService {
       const location = locations[i];
 
       if (location.speedKmh !== null && location.speedKmh !== undefined) {
-        totalSpeed += location.speedKmh;
         speedCount++;
 
         maxSpeedKmh = Math.max(maxSpeedKmh, location.speedKmh);
@@ -586,19 +600,29 @@ export class RidesService {
       }
     }
 
+    const durationSeconds = this.calculateDuration(ride.startedAt, ride.endedAt);
+
     return {
       rideId: ride.id,
       rideCode: ride.rideCode,
       status: ride.status,
       startedAt: ride.startedAt,
       endedAt: ride.endedAt,
-      durationSeconds: this.calculateDuration(ride.startedAt, ride.endedAt),
+      durationSeconds,
       distanceKm: Number(distanceKm.toFixed(2)),
       averageSpeedKmh:
-        speedCount > 0 ? Number((totalSpeed / speedCount).toFixed(2)) : 0,
-      maxSpeedKmh: Number(maxSpeedKmh.toFixed(2)),
+        durationSeconds > 0
+          ? Number((distanceKm / (durationSeconds / 3600)).toFixed(2))
+          : 0,
+      maxSpeedKmh:
+        speedCount > 0 ? Number(maxSpeedKmh.toFixed(2)) : null,
       locationCount: locations.length,
     };
+  }
+
+  async getMonitoredRideSummary(guardianId: string, rideId: string) {
+    const ride = await this.getMonitoredHistoryRide(guardianId, rideId);
+    return this.getRideSummary(ride.riderId, rideId);
   }
 
   async getRideLocations(
@@ -611,6 +635,38 @@ export class RidesService {
       where: { rideId },
       order: { recordedAt: 'ASC' },
     });
+  }
+
+  async getMonitoredRideLocations(
+    guardianId: string,
+    rideId: string,
+  ): Promise<RideLocation[]> {
+    await this.getMonitoredHistoryRide(guardianId, rideId);
+
+    return this.rideLocationRepository.find({
+      where: { rideId },
+      order: { recordedAt: 'ASC' },
+    });
+  }
+
+  private async getMonitoredHistoryRide(guardianId: string, rideId: string) {
+    const ride = await this.rideRepository.findOne({ where: { id: rideId } });
+    if (!ride) {
+      throw new NotFoundException('Ride not found');
+    }
+
+    if (ride.riderId === guardianId || ride.status === 'ACTIVE') {
+      throw new ForbiddenException('This is not a monitored history ride');
+    }
+
+    const assignment = await this.dataSource.getRepository(RideGuardian).findOne({
+      where: { rideId, guardianId },
+    });
+    if (!assignment) {
+      throw new ForbiddenException('You were not assigned to this ride');
+    }
+
+    return ride;
   }
 
   async getCurrentLocation(

@@ -7,6 +7,7 @@ import '../models/ride.dart';
 import '../services/rides_api_service.dart';
 import '../widgets/ride_action_button.dart';
 import 'active_ride_screen.dart';
+import 'ride_history_detail_screen.dart';
 import 'ride_start_screen.dart';
 
 class RidesScreen extends StatefulWidget {
@@ -204,6 +205,22 @@ class _RidesScreenState extends State<RidesScreen> {
           ride: ride,
           ridesApiService: widget.ridesApiService,
           isGuardian: monitored,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRideHistoryDetails(
+    Ride ride, {
+    bool monitored = false,
+  }) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => RideHistoryDetailScreen(
+          ride: ride,
+          ridesApiService: widget.ridesApiService,
+          isMonitoredRide: monitored,
         ),
       ),
     );
@@ -732,60 +749,76 @@ class _RidesScreenState extends State<RidesScreen> {
 
   Widget _buildHistoryRideCard(Ride ride, {required bool monitored}) {
     final colors = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.surface,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        onTap: () => _openRideHistoryDetails(ride, monitored: monitored),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: colors.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _statusBadge(ride.status.toUpperCase(), colors.onSurfaceVariant),
-              const Spacer(),
-              Text(
-                _formatDate(ride.startedAt),
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(color: colors.onSurfaceVariant),
+              Row(
+                children: [
+                  _statusBadge(
+                    ride.status.toUpperCase(),
+                    colors.onSurfaceVariant,
+                  ),
+                  const Spacer(),
+                  Text(
+                    _formatDate(ride.startedAt),
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: colors.onSurfaceVariant),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ],
               ),
+              if (monitored && ride.riderName != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Rider: ${ride.riderName}',
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                ride.displayLabel,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              _detailItem(
+                Icons.play_circle_outline_rounded,
+                'Started: ${_formatTime(ride.startedAt)}',
+              ),
+              if (ride.endedAt != null) ...[
+                const SizedBox(height: 8),
+                _detailItem(
+                  Icons.stop_circle_outlined,
+                  'Ended: ${_formatTime(ride.endedAt!)}',
+                ),
+                const SizedBox(height: 8),
+                _detailItem(
+                  Icons.timer_outlined,
+                  'Duration: ${_formatDuration(ride.startedAt, ride.endedAt!)}',
+                ),
+              ],
             ],
           ),
-          if (monitored && ride.riderName != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Rider: ${ride.riderName}',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w800),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Text(
-            ride.displayLabel,
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 12),
-          _detailItem(
-            Icons.play_circle_outline_rounded,
-            'Started: ${_formatTime(ride.startedAt)}',
-          ),
-          if (ride.endedAt != null) ...[
-            const SizedBox(height: 8),
-            _detailItem(
-              Icons.stop_circle_outlined,
-              'Ended: ${_formatTime(ride.endedAt!)}',
-            ),
-            const SizedBox(height: 8),
-            _detailItem(
-              Icons.timer_outlined,
-              'Duration: ${_formatDuration(ride.startedAt, ride.endedAt!)}',
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

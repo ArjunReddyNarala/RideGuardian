@@ -52,6 +52,8 @@ class ApiUrls {
   static String addRideGuardian(String rideId) => '$rides/$rideId/guardians';
 
   static String rideGuardians(String rideId) => '$rides/$rideId/guardians';
+  static String rideHistoryGuardians(String rideId) =>
+      '$rides/$rideId/guardians/history';
 
   static String rideLocations(String rideId) => '$rides/$rideId/locations';
 
@@ -65,6 +67,12 @@ class ApiUrls {
   static const String guardianRideSummary = '$rides/monitoring/summary';
 
   static const String guardianRideHistory = '$rides/monitoring/history';
+
+  static String monitoredRideSummary(String rideId) =>
+      '$rides/monitoring/$rideId/summary';
+
+  static String monitoredRideLocations(String rideId) =>
+      '$rides/monitoring/$rideId/locations';
 
   static String rideTrackingSnapshot(String rideId) =>
       '$rides/$rideId/tracking-snapshot';

@@ -7,6 +7,8 @@ import '../models/ride.dart';
 import '../models/paginated_rides.dart';
 import '../models/favorite_guardian.dart';
 import '../models/ride_guardian.dart';
+import '../models/ride_location_point.dart';
+import '../models/ride_summary.dart';
 import '../models/start_ride_request.dart';
 
 enum RideLifecycleChange { started, ended }
@@ -61,6 +63,15 @@ class RidesApiService extends ChangeNotifier {
 
   Future<List<RideGuardian>> getRideGuardians(String rideId) async {
     final response = await _apiClient.get(ApiUrls.rideGuardians(rideId));
+    return _parseRideGuardians(response);
+  }
+
+  Future<List<RideGuardian>> getRideHistoryGuardians(String rideId) async {
+    final response = await _apiClient.get(ApiUrls.rideHistoryGuardians(rideId));
+    return _parseRideGuardians(response);
+  }
+
+  List<RideGuardian> _parseRideGuardians(dynamic response) {
     dynamic data = response;
     if (data is Map<String, dynamic> && data.containsKey('data')) {
       data = data['data'];
@@ -71,6 +82,48 @@ class RidesApiService extends ChangeNotifier {
     return data
         .whereType<Map>()
         .map((item) => RideGuardian.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<RideSummary> getRideSummary(String rideId) async {
+    final response = await _apiClient.get(ApiUrls.rideSummary(rideId));
+    return RideSummary.fromJson(_requireObject(response));
+  }
+
+  Future<RideSummary> getMonitoredRideSummary(String rideId) async {
+    final response = await _apiClient.get(ApiUrls.monitoredRideSummary(rideId));
+    return RideSummary.fromJson(_requireObject(response));
+  }
+
+  Future<List<RideLocationPoint>> getRideLocations(String rideId) async {
+    final response = await _apiClient.get(ApiUrls.rideLocations(rideId));
+    return _parseRideLocations(response);
+  }
+
+  Future<List<RideLocationPoint>> getMonitoredRideLocations(
+    String rideId,
+  ) async {
+    final response = await _apiClient.get(
+      ApiUrls.monitoredRideLocations(rideId),
+    );
+    return _parseRideLocations(response);
+  }
+
+  List<RideLocationPoint> _parseRideLocations(dynamic response) {
+    if (response is Map<String, dynamic> && response.containsKey('data')) {
+      response = response['data'];
+    }
+    if (response is Map<String, dynamic> && response.containsKey('data')) {
+      response = response['data'];
+    }
+    if (response is! List) {
+      throw const FormatException('Invalid ride route response.');
+    }
+    return response
+        .whereType<Map>()
+        .map(
+          (item) => RideLocationPoint.fromJson(Map<String, dynamic>.from(item)),
+        )
         .toList();
   }
 

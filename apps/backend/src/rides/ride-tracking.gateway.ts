@@ -40,6 +40,7 @@ export class RideTrackingGateway implements OnModuleInit, OnModuleDestroy {
   private server: WebSocketServer;
 
   private readonly clients = new Set<ConnectedClient>();
+  private readonly latestLocations = new Map<string, RideLocationDto>();
 
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
@@ -210,19 +211,30 @@ export class RideTrackingGateway implements OnModuleInit, OnModuleDestroy {
       }
 
       const dto = this.validateLocation(message.data);
+      const location = {
+        ...dto,
+        recordedAt: dto.recordedAt ?? new Date().toISOString(),
+      };
+      const previous = this.latestLocations.get(client.rideId);
+      if (
+        !previous ||
+        Date.parse(location.recordedAt) >= Date.parse(previous.recordedAt ?? '')
+      ) {
+        this.latestLocations.set(client.rideId, location);
+      }
 
       // Deliver the GPS fix to rider and guardians immediately. Database writes
       // and speed-alert work can take much longer than the websocket hop.
       this.broadcastLocationUpdate(client.rideId, {
         rideId: client.rideId,
-        latitude: dto.latitude,
-        longitude: dto.longitude,
-        speedKmh: dto.speedKmh ?? null,
-        speedAccuracyKmh: dto.speedAccuracyKmh ?? null,
-        accuracyMeters: dto.accuracyMeters ?? null,
-        headingDegrees: dto.headingDegrees ?? null,
-        batteryLevel: dto.batteryLevel ?? null,
-        recordedAt: dto.recordedAt ?? new Date().toISOString(),
+        latitude: location.latitude,
+        longitude: location.longitude,
+        speedKmh: location.speedKmh ?? null,
+        speedAccuracyKmh: location.speedAccuracyKmh ?? null,
+        accuracyMeters: location.accuracyMeters ?? null,
+        headingDegrees: location.headingDegrees ?? null,
+        batteryLevel: location.batteryLevel ?? null,
+        recordedAt: location.recordedAt,
       });
 
       this.send(client.socket, {
@@ -232,14 +244,14 @@ export class RideTrackingGateway implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      // Preserve fix order in storage while keeping the websocket delivery
-      // path independent from database and notification latency.
+      // Preserve fix order for route sampling and speed-alert work while
+      // keeping WebSocket delivery independent from database latency.
       client.locationProcessing = client.locationProcessing
         .then(async () => {
           const result = await this.rideTrackingService.processLocation(
             client.userId,
             client.rideId,
-            dto,
+            location,
           );
 
           for (const alert of result.alerts) {
@@ -397,6 +409,20 @@ export class RideTrackingGateway implements OnModuleInit, OnModuleDestroy {
         rideId,
       },
     });
+    this.latestLocations.delete(rideId);
+    this.rideTrackingService.clearRideSamplingState(rideId);
+  }
+
+  async persistRideEndLocation(rideId: string) {
+    const riderClients = [...this.clients].filter(
+      (client) => client.rideId === rideId && client.role === 'RIDER',
+    );
+    await Promise.all(riderClients.map((client) => client.locationProcessing));
+
+    const latest = this.latestLocations.get(rideId);
+    if (latest) {
+      await this.rideTrackingService.persistFinalLocation(rideId, latest);
+    }
   }
 
   private send(socket: WebSocket, message: object) {

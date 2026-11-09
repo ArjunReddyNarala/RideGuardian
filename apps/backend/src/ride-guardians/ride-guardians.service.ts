@@ -134,7 +134,7 @@ export class RideGuardiansService {
         userId: guardianId,
         type: 'RIDE_STARTED',
         title: 'You were added to a ride',
-        body: `You can now monitor ride ${ride.rideCode}.`,
+        body: 'You can now monitor this ride and view its live updates in Ride Guardian.',
         category: 'RIDE',
       });
     } catch (error) {
@@ -159,6 +159,22 @@ export class RideGuardiansService {
       },
     });
 
+    return this.toGuardianProfiles(assignments);
+  }
+
+  /** List every guardian who was assigned at any point during this ride. */
+  async getRideHistoryGuardians(riderId: string, rideId: string) {
+    await this.getOwnedRide(riderId, rideId);
+
+    const assignments = await this.rideGuardianRepository.find({
+      where: { rideId },
+      order: { addedAt: 'ASC' },
+    });
+
+    return this.toGuardianProfiles(assignments);
+  }
+
+  private async toGuardianProfiles(assignments: RideGuardian[]) {
     // Return assignment information together with guardian profiles.
     const guardians = await Promise.all(
       assignments.map(async (assignment) => {
@@ -181,6 +197,7 @@ export class RideGuardiansService {
           phone: guardian.phone,
           profileImageUrl: guardian.profileImageUrl,
           addedAt: assignment.addedAt,
+          removedAt: assignment.removedAt,
         };
       }),
     );

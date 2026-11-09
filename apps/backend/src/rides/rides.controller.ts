@@ -111,6 +111,26 @@ export class RidesController {
     );
   }
 
+  @Get('monitoring/:rideId/summary')
+  async getMonitoredRideSummary(
+    @CurrentUser() firebaseUser: DecodedIdToken,
+    @Param('rideId') rideId: string,
+  ) {
+    const guardian = await this.getBackendUser(firebaseUser.uid);
+
+    return this.ridesService.getMonitoredRideSummary(guardian.id, rideId);
+  }
+
+  @Get('monitoring/:rideId/locations')
+  async getMonitoredRideLocations(
+    @CurrentUser() firebaseUser: DecodedIdToken,
+    @Param('rideId') rideId: string,
+  ) {
+    const guardian = await this.getBackendUser(firebaseUser.uid);
+
+    return this.ridesService.getMonitoredRideLocations(guardian.id, rideId);
+  }
+
   /**
    * Returns the latest ride location and the authenticated
    * guardian's speed-monitoring configuration.

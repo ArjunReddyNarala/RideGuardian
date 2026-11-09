@@ -110,7 +110,11 @@ export class NotificationsService {
       });
 
     return {
-      data: notifications,
+      // Older in-app notifications may already contain an internal ride code.
+      // Hide it in API responses as well as avoiding it in newly created text.
+      data: notifications.map((notification) =>
+        this.withoutRideCodes(notification),
+      ),
       pagination: {
         page: safePage,
         limit: safeLimit,
@@ -164,7 +168,20 @@ export class NotificationsService {
       await this.notificationRepository.save(notification);
     }
 
-    return notification;
+    return this.withoutRideCodes(notification);
+  }
+
+  private withoutRideCodes(notification: Notification): Notification {
+    const removeRideCode = (text: string) =>
+      text
+        .replace(/\bRide\s+RG-[A-Z0-9]+-[A-Z0-9]+\b/g, 'This ride')
+        .replace(/\bride\s+RG-[A-Z0-9]+-[A-Z0-9]+\b/g, 'this ride');
+
+    return {
+      ...notification,
+      title: removeRideCode(notification.title),
+      body: removeRideCode(notification.body),
+    };
   }
 
   /**

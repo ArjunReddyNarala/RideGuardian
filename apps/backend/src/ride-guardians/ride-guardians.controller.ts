@@ -81,6 +81,26 @@ export class RideGuardiansController {
     );
   }
 
+  @Get('history')
+  @ApiOperation({
+    summary: 'Get all guardians who were assigned during a ride',
+  })
+  @ApiParam({
+    name: 'rideId',
+    description: 'ID of the ride',
+  })
+  async getRideHistoryGuardians(
+    @CurrentUser() firebaseUser: DecodedIdToken,
+    @Param('rideId') rideId: string,
+  ) {
+    const rider = await this.getCurrentDatabaseUser(firebaseUser.uid);
+
+    return this.rideGuardiansService.getRideHistoryGuardians(
+      rider.id,
+      rideId,
+    );
+  }
+
   @Delete(':guardianId')
   @ApiOperation({
     summary: 'Remove a guardian from a ride',

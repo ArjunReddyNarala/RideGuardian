@@ -10,6 +10,7 @@ import '../../guardians/screens/guardians_screen.dart';
 import '../../rides/models/favorite_guardian.dart';
 import '../../rides/models/ride.dart';
 import '../../rides/screens/active_ride_screen.dart';
+import '../../rides/screens/ride_history_detail_screen.dart';
 import '../../rides/screens/ride_start_screen.dart';
 import '../../rides/screens/rides_screen.dart';
 import '../../rides/services/rides_api_service.dart';
@@ -121,6 +122,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
     if (mounted) _refreshUnreadNotifications();
+  }
+
+  Future<void> _openRideHistory(Ride ride, {required bool monitored}) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => RideHistoryDetailScreen(
+          ride: ride,
+          ridesApiService: widget.ridesApiService,
+          isMonitoredRide: monitored,
+        ),
+      ),
+    );
   }
 
   Future<List<Ride>> _loadRecentRides() async {
@@ -826,7 +839,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: InkWell(
         onTap: isActive
             ? () => monitored ? _openMonitoredRide(ride) : _openActiveRide(ride)
-            : () => _navigateToRidesTab(monitored ? 1 : 0),
+            : () => _openRideHistory(ride, monitored: monitored),
         borderRadius: BorderRadius.circular(18),
         child: Container(
           padding: const EdgeInsets.all(16),
