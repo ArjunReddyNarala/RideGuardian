@@ -1,7 +1,7 @@
 name: mobile
-description: "A new Flutter project."
+description: "Ride safety and live ride sharing with trusted guardians."
 publish_to: 'none'
-version: 0.1.0+1
+version: 1.0.0+1
 
 environment:
   sdk: ^3.13.5
@@ -31,7 +31,6 @@ flutter:
   assets:
     - lib/assets/icons/app_icon.png
     - lib/assets/icons/google_sign_in/
-    - .env
 
 flutter_launcher_icons:
   android: true

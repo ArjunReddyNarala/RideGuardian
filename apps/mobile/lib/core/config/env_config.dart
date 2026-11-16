@@ -1,25 +1,20 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-
 class EnvConfig {
   EnvConfig._();
 
-  static const String _defaultBackendUrl = 'http://192.168.1.11:3000';
+  static const String _defaultBackendUrl =
+      'https://rideguardian-backend.onrender.com';
 
   static String get backendBaseUrl {
-    final value = dotenv.env['BACKEND_BASE_URL']?.trim();
-
-    var baseUrl = (value == null || value.isEmpty) ? _defaultBackendUrl : value;
-
-    final markdownLink = RegExp(r'^\[[^\]]+\]\((https?://[^)]+)\)$')
-        .firstMatch(baseUrl);
-    if (markdownLink != null) {
-      baseUrl = markdownLink.group(1)!;
+    const configuredUrl = String.fromEnvironment('BACKEND_BASE_URL');
+    final baseUrl = configuredUrl.trim().isEmpty
+        ? _defaultBackendUrl
+        : configuredUrl.trim();
+    final uri = Uri.tryParse(baseUrl);
+    if (uri == null ||
+        (uri.scheme != 'https' && uri.scheme != 'http') ||
+        uri.host.isEmpty) {
+      throw StateError('BACKEND_BASE_URL must be a valid HTTP or HTTPS URL.');
     }
-
-    while (baseUrl.startsWith('BACKEND_BASE_URL=')) {
-      baseUrl = baseUrl.substring('BACKEND_BASE_URL='.length).trim();
-    }
-
     return baseUrl.replaceFirst(RegExp(r'/+$'), '');
   }
 }

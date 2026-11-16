@@ -7,9 +7,20 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val releaseStoreFile = providers.gradleProperty("RELEASE_STORE_FILE").orNull
+    ?: System.getenv("RELEASE_STORE_FILE")
+val releaseStorePassword = providers.gradleProperty("RELEASE_STORE_PASSWORD").orNull
+    ?: System.getenv("RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = providers.gradleProperty("RELEASE_KEY_ALIAS").orNull
+    ?: System.getenv("RELEASE_KEY_ALIAS")
+val releaseKeyPassword = providers.gradleProperty("RELEASE_KEY_PASSWORD").orNull
+    ?: System.getenv("RELEASE_KEY_PASSWORD")
+val mapsApiKey = providers.gradleProperty("MAPS_API_KEY").orNull
+    ?: System.getenv("MAPS_API_KEY")
+
 android {
-    namespace = "com.example.mobile"
-    compileSdk = flutter.compileSdkVersion
+    namespace = "com.arjunreddynarala.rideguardian"
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -18,25 +29,50 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.mobile"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        applicationId = "com.arjunreddynarala.rideguardian"
+        minSdk = 23
+        targetSdk = 36
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
         // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey ?: ""
     }
+    if (releaseStoreFile != null && releaseStorePassword != null &&
+        releaseKeyAlias != null && releaseKeyPassword != null
+    ) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+        buildTypes {
+            release {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
+}
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+tasks.configureEach {
+    if (name == "bundleRelease" || name == "assembleRelease") {
+        doFirst {
+            check(!mapsApiKey.isNullOrBlank()) {
+                "Set MAPS_API_KEY in ~/.gradle/gradle.properties or the environment before building a release."
+            }
+            check(releaseStoreFile != null && releaseStorePassword != null &&
+                releaseKeyAlias != null && releaseKeyPassword != null
+            ) {
+                "Configure RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, and RELEASE_KEY_PASSWORD before building a release. See android/RELEASE.md."
+            }
+            check(file(releaseStoreFile!!).isFile) {
+                "RELEASE_STORE_FILE does not point to a readable upload keystore."
+            }
         }
     }
 }

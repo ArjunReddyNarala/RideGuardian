@@ -1,4 +1,4 @@
-package com.example.mobile
+package com.arjunreddynarala.rideguardian
 
 import android.content.Context
 import android.os.BatteryManager
